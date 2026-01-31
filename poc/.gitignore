@@ -1,0 +1,10 @@
+# Environment
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Swift build
+systemAudioDump/.build/
