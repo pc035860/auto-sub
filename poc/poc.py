@@ -2,12 +2,15 @@
 """
 即時系統音訊字幕翻譯 PoC
 
-流程：系統音訊（日語） → Deepgram 轉文字 → DeepL 翻譯 → 終端機顯示
+流程：系統音訊（日語） → Deepgram 轉文字 → Gemini 翻譯 → 終端機顯示
 """
 
 import signal
 import sys
 import time
+
+# 強制無緩衝輸出，確保即時顯示
+sys.stdout.reconfigure(line_buffering=True)
 
 from dotenv import load_dotenv
 

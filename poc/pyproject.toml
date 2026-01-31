@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "deepgram-sdk>=5.3.2",
-    "deepl>=1.27.0",
+    "google-genai>=1.61.0",
     "python-dotenv>=1.2.1",
-    "websockets>=16.0",
+    "websockets>=13.0,<15.1",
 ]
