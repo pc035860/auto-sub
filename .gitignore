@@ -1,0 +1,13 @@
+# Environment
+poc/.env
+
+# Python
+poc/.venv/
+**/__pycache__/
+*.pyc
+
+# Swift build
+poc/systemAudioDump/.build/
+
+# Specs
+specs/handover/
