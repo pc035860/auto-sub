@@ -285,28 +285,36 @@ func saveAudioForVerification(_ data: Data, to filename: String) {
 5. **SCStreamDelegate**：
    - 實作 `SCStreamDelegate` 以捕捉串流錯誤
 
-### 品質改進（Code Quality 7.6 → 8.5+）
+### 品質改進歷程
 
-**P1 - 效能優化：緩存 AVAudioPCMBuffer**
-- 新增 `cachedInputBuffer` 和 `cachedOutputBuffer`
-- 重用 buffer 減少 GC 壓力，預留 20% 容量避免頻繁重分配
+**初版優化（Code Quality 7.6 → 8.5+）**
+- P1: 緩存 AVAudioPCMBuffer 減少 GC 壓力
+- P2: 提取 `copyAudioData(from:to:)` 方法
+- P3: 改進 initializeConverter 錯誤處理
+- P4: 新增 onError 回呼
 
-**P2 - 可讀性：提取音訊複製邏輯**
-- 新增 `copyAudioData(from:to:)` 方法
-- 單一職責，邏輯更清晰
+**音訊品質修復（與 POC 對齊）**
 
-**P3 - 除錯能力：改進 initializeConverter 錯誤處理**
-- 新增 `converterInitFailed` 和 `hasReportedInitFailure` 標記
-- 失敗時輸出詳細日誌並透過 `onError` 通知上層
+測試發現音訊品質有問題（雜音、斷斷續續），經比對 POC 實現後進行修正：
 
-**P4 - 完整性：新增 onError 回呼**
-- `AudioStreamOutput.onError` 屬性
-- `AudioCaptureService.onError` 和 `lastError` 屬性
-- 錯誤可傳遞給上層處理
+1. **聲道數改為動態**：
+   - 原本：強制使用 2 聲道 `targetChannels = 2`
+   - 修正：使用源的聲道數 `desc.mChannelsPerFrame`
+   - 原因：強制聲道數會導致音訊格式不匹配
 
-**其他改進**
-- 保存 DispatchQueue 引用，stopCapture 時正確清理
-- 偶發錯誤記錄（每 100 幀記錄一次），避免大量 log
+2. **移除 Buffer 緩存**：
+   - 原本：重用 `cachedInputBuffer` 和 `cachedOutputBuffer`
+   - 修正：每次都建立新的 buffer（與 POC 一致）
+   - 原因：緩存 buffer 可能導致狀態不乾淨
+
+**Swift 6 並發安全性修復**
+- 加 `@MainActor` 標記到使用 singleton 的類別
+- 加 `@preconcurrency import AVFAudio` 抑制 Sendable 警告
+
+**macOS 版本相容性修復**
+- `SettingsLink`: 加 `#available(macOS 14.0, *)` 檢查
+- `onChange(of:)`: 使用舊版語法（單參數）
+- `captureMicrophone`: 加 `#available(macOS 15.0, *)` 檢查
 
 ## Notes
 
@@ -320,7 +328,7 @@ func saveAudioForVerification(_ data: Data, to filename: String) {
 
 確保與 Python Backend 的預期格式一致：
 - Sample Rate: 24000 Hz
-- Channels: 2
+- Channels: 動態（使用源的聲道數，通常為 2）
 - Bit Depth: 16-bit (Int16)
 
 ### 效能考量
