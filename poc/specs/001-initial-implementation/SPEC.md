@@ -230,14 +230,18 @@ struct AutoSubApp: App {
 
 ### 5.2 AudioCaptureService.swift
 
+> **實作調整**：使用 `AVAudioConverter` 進行格式轉換，確保輸出為 24kHz, Int16, 交錯格式。
+
 ```swift
 import ScreenCaptureKit
 import AVFoundation
+import CoreMedia
 
 @MainActor
 class AudioCaptureService: NSObject, ObservableObject {
     private var stream: SCStream?
     private var streamOutput: AudioStreamOutput?
+    private var audioProcessingQueue: DispatchQueue?
 
     var onAudioData: ((Data) -> Void)?
 
@@ -246,11 +250,24 @@ class AudioCaptureService: NSObject, ObservableObject {
     let channels: Int = 2
     let bytesPerSample: Int = 2
 
-    // 音量檢測（用於字幕顯示/隱藏）
+    // 狀態發布
+    @Published private(set) var isCapturing: Bool = false
+    @Published var currentVolume: Float = 0
     @Published var hasAudioActivity: Bool = false
-    private let silenceThreshold: Float = 0.01  // RMS 閾值
+
+    // 靜音檢測
+    private let silenceThreshold: Float = 0.01
     private var silenceFrameCount: Int = 0
-    private let silenceFramesRequired: Int = 10  // 連續 10 個 chunk 無聲視為靜音
+    private let silenceFramesRequired: Int = 10
+
+    // 權限檢查
+    func hasPermission() -> Bool {
+        return CGPreflightScreenCaptureAccess()
+    }
+
+    func requestPermission() -> Bool {
+        return CGRequestScreenCaptureAccess()
+    }
 
     func startCapture() async throws {
         // 1. 檢查權限
@@ -269,7 +286,7 @@ class AudioCaptureService: NSObject, ObservableObject {
             throw AudioCaptureError.noDisplay
         }
 
-        // 3. 建立過濾器（擷取整個顯示器）
+        // 3. 建立過濾器
         let filter = SCContentFilter(
             display: display,
             excludingApplications: [],
@@ -279,101 +296,166 @@ class AudioCaptureService: NSObject, ObservableObject {
         // 4. 配置串流
         let config = SCStreamConfiguration()
         config.capturesAudio = true
+        config.captureMicrophone = false
         config.excludesCurrentProcessAudio = true
-        config.sampleRate = Int(sampleRate)
-        config.channelCount = channels
 
-        // 注意：必須設定視訊輸出（ScreenCaptureKit 限制）
-        config.width = 2
-        config.height = 2
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)  // 1 FPS 最小化
+        // 5. 建立 stream output（使用 AVAudioConverter 轉換格式）
+        streamOutput = AudioStreamOutput(
+            onAudioData: { [weak self] data in
+                self?.onAudioData?(data)
+            },
+            onVolumeLevel: { [weak self] rms in
+                Task { @MainActor in
+                    self?.updateVolumeLevel(rms)
+                }
+            }
+        )
 
-        // 5. 建立串流
-        stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        streamOutput = AudioStreamOutput(onAudio: onAudioData)
+        // 6. 建立串流
+        stream = SCStream(filter: filter, configuration: config, delegate: streamOutput)
 
+        // 7. 添加音訊輸出（使用 .default QoS 避免 CPU 過載）
+        audioProcessingQueue = DispatchQueue(label: "com.autosub.audio", qos: .default)
         try stream?.addStreamOutput(
             streamOutput!,
             type: .audio,
-            sampleHandlerQueue: .global(qos: .userInteractive)
+            sampleHandlerQueue: audioProcessingQueue!
         )
 
-        // 6. 開始擷取
+        // 8. 開始擷取
         try await stream?.startCapture()
+        isCapturing = true
     }
 
     func stopCapture() async {
         try? await stream?.stopCapture()
         stream = nil
+        streamOutput = nil
+        audioProcessingQueue = nil
+        isCapturing = false
+        hasAudioActivity = false
+        currentVolume = 0
+    }
+
+    private func updateVolumeLevel(_ rms: Float) {
+        currentVolume = rms
+        if rms < silenceThreshold {
+            silenceFrameCount += 1
+            if silenceFrameCount >= silenceFramesRequired {
+                hasAudioActivity = false
+            }
+        } else {
+            silenceFrameCount = 0
+            hasAudioActivity = true
+        }
     }
 }
 
-// 音訊輸出處理
-class AudioStreamOutput: NSObject, SCStreamOutput {
-    var onAudio: ((Data) -> Void)?
-    var onVolumeLevel: ((Float) -> Void)?  // 音量回呼
+// 音訊輸出處理（使用 AVAudioConverter 轉換格式）
+class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
+    var onAudioData: ((Data) -> Void)?
+    var onVolumeLevel: ((Float) -> Void)?
 
-    init(onAudio: ((Data) -> Void)?, onVolumeLevel: ((Float) -> Void)? = nil) {
-        self.onAudio = onAudio
+    private var converter: AVAudioConverter?
+    private var outputFormat: AVAudioFormat?
+    private let targetSampleRate: Double = 24_000
+    private let targetChannels: AVAudioChannelCount = 2
+
+    init(onAudioData: ((Data) -> Void)?, onVolumeLevel: ((Float) -> Void)? = nil) {
+        self.onAudioData = onAudioData
         self.onVolumeLevel = onVolumeLevel
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio else { return }
 
-        // 轉換為 PCM 資料
-        guard let pcmData = convertToPCM(sampleBuffer) else { return }
+        do {
+            try sampleBuffer.withAudioBufferList { abl, _ in
+                guard let desc = sampleBuffer.formatDescription?.audioStreamBasicDescription else { return }
 
-        // 計算 RMS 音量（用於判斷是否有聲音）
-        let rms = calculateRMS(pcmData)
-        onVolumeLevel?(rms)
+                // 延遲初始化轉換器
+                if converter == nil {
+                    initializeConverter(from: desc)
+                }
 
-        onAudio?(pcmData)
+                guard let converter = converter, let outFmt = outputFormat else { return }
+
+                // 使用 AVAudioConverter 轉換格式
+                // ... (完整實作見 AudioCaptureService.swift)
+
+                // 計算 RMS 並回呼
+                let rms = calculateRMS(pcmData)
+                onVolumeLevel?(rms)
+                onAudioData?(pcmData)
+            }
+        } catch {
+            // 偶發錯誤記錄
+        }
     }
 
-    /// 計算 RMS（均方根）音量
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        print("[AudioStreamOutput] Stream stopped with error: \(error)")
+    }
+
+    private func initializeConverter(from desc: AudioStreamBasicDescription) {
+        // 來源格式（系統預設，通常是 Float32 非交錯）
+        guard let srcFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: desc.mSampleRate,
+            channels: desc.mChannelsPerFrame,
+            interleaved: false
+        ) else { return }
+
+        // 目標格式：24kHz, Int16, 交錯（Deepgram 需要）
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: targetSampleRate,
+            channels: targetChannels,
+            interleaved: true
+        ) else { return }
+
+        outputFormat = targetFormat
+        converter = AVAudioConverter(from: srcFormat, to: targetFormat)
+    }
+
     private func calculateRMS(_ data: Data) -> Float {
-        let samples = data.withUnsafeBytes { buffer -> [Int16] in
-            Array(buffer.bindMemory(to: Int16.self))
-        }
-
+        // RMS 計算（與原規格相同）
+        let samples = data.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
         guard !samples.isEmpty else { return 0 }
-
         let sumOfSquares = samples.reduce(0.0) { sum, sample in
             let normalized = Float(sample) / Float(Int16.max)
             return sum + (normalized * normalized)
         }
-
         return sqrt(sumOfSquares / Float(samples.count))
     }
-
-    private func convertToPCM(_ sampleBuffer: CMSampleBuffer) -> Data? {
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
-            return nil
-        }
-
-        var length = 0
-        var dataPointer: UnsafeMutablePointer<Int8>?
-
-        CMBlockBufferGetDataPointer(
-            blockBuffer,
-            atOffset: 0,
-            lengthAtOffsetOut: nil,
-            totalLengthOut: &length,
-            dataPointerOut: &dataPointer
-        )
-
-        guard let dataPointer = dataPointer else { return nil }
-        return Data(bytes: dataPointer, count: length)
-    }
 }
 
-enum AudioCaptureError: Error {
+enum AudioCaptureError: Error, LocalizedError {
     case permissionDenied
     case noDisplay
-    case streamFailed
+    case streamFailed(Error)
+    case converterInitFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .permissionDenied: return "請授權螢幕錄製權限"
+        case .noDisplay: return "找不到顯示器"
+        case .streamFailed(let error): return "音訊擷取失敗: \(error.localizedDescription)"
+        case .converterInitFailed: return "音訊轉換器初始化失敗"
+        }
+    }
 }
 ```
+
+**Phase 2 實作調整記錄**：
+
+| 項目 | 原規格 | 實作 | 原因 |
+|------|--------|------|------|
+| 格式轉換 | 直接讀取 CMBlockBuffer | AVAudioConverter | 系統輸出可能是 Float32 非交錯 |
+| QoS | `.userInteractive` | `.default` | 避免 CPU 過載 |
+| 錯誤類型 | `streamFailed` | `streamFailed(Error)` | 包含詳細錯誤資訊 |
+| 新增 API | - | `isCapturing`, `currentVolume`, `hasPermission()`, `requestPermission()` | 提升 UI 整合性 |
+| SCStreamDelegate | 未實作 | 已實作 | 監聽串流錯誤 |
 
 ### 5.3 PythonBridgeService.swift
 
