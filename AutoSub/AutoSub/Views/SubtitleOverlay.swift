@@ -36,7 +36,7 @@ struct SubtitleOverlay: View {
         )
         .opacity(isVisible ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isVisible)
-        .onChange(of: appState.currentSubtitle) { _, newSubtitle in
+        .onChange(of: appState.currentSubtitle) { newSubtitle in
             if newSubtitle != nil {
                 showSubtitle()
             }

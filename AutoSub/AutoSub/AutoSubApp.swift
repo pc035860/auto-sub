@@ -25,6 +25,12 @@ struct AutoSubApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
+
+        // Phase 2 測試視窗（開發用，之後可移除）
+        Window("Audio Test", id: "audio-test") {
+            AudioTestView()
+        }
+        .windowResizability(.contentSize)
     }
 
     private var menuBarIcon: String {

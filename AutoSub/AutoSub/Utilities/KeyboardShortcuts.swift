@@ -10,7 +10,8 @@ import AppKit
 import Carbon
 
 /// 快捷鍵管理
-class KeyboardShortcuts {
+@MainActor
+final class KeyboardShortcuts {
     static let shared = KeyboardShortcuts()
 
     private var eventMonitor: Any?

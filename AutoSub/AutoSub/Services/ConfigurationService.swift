@@ -17,7 +17,8 @@ enum KeychainError: Error {
 }
 
 /// 設定服務
-class ConfigurationService {
+@MainActor
+final class ConfigurationService {
     static let shared = ConfigurationService()
 
     private let configFileName = "config.json"

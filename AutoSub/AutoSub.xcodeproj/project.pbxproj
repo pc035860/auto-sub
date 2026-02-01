@@ -3,11 +3,12 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		09410AB1A7539EB1105270A9 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69A292045BA4389325D83D0 /* OnboardingView.swift */; };
+		24522BF82F2F290C00A7AFA2 /* AudioTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24522BF72F2F290C00A7AFA2 /* AudioTestView.swift */; };
 		25E86B61BEB1DB61C2265303 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4844765DAFD2B6B8EDD5C6 /* AppState.swift */; };
 		39133CD5AC004907F2602DD0 /* PythonBridgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A4ECB92718F2724AF20089 /* PythonBridgeService.swift */; };
 		44CCC8AA6D76FA3E2046EDE4 /* ConfigurationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9783669E84B4444B9D4DC6E /* ConfigurationService.swift */; };
@@ -26,6 +27,7 @@
 		07A4ECB92718F2724AF20089 /* PythonBridgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PythonBridgeService.swift; sourceTree = "<group>"; };
 		1BB4054B3BEDFCC8304C9A3B /* Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Configuration.swift; sourceTree = "<group>"; };
 		1F3F06E7117DA2DFB493C1B4 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		24522BF72F2F290C00A7AFA2 /* AudioTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTestView.swift; sourceTree = "<group>"; };
 		270B2719EA436D73E92DAF76 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
 		3312F51BCFDEC5D738DAFF53 /* AutoSubApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoSubApp.swift; sourceTree = "<group>"; };
 		38C9283309B83D217BFE3BA5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 		72669B665F4F830E17C2223C /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				24522BF72F2F290C00A7AFA2 /* AudioTestView.swift */,
 				1F3F06E7117DA2DFB493C1B4 /* MenuBarView.swift */,
 				B69A292045BA4389325D83D0 /* OnboardingView.swift */,
 				38C9283309B83D217BFE3BA5 /* SettingsView.swift */,
@@ -167,7 +170,6 @@
 			);
 			mainGroup = 120C1C68EF6A99AD2C984C90;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -186,6 +188,7 @@
 				B01D08FAB9FA032909E82A32 /* AutoSubApp.swift in Sources */,
 				665BC7067D9C3657DDB4CEE8 /* Configuration.swift in Sources */,
 				44CCC8AA6D76FA3E2046EDE4 /* ConfigurationService.swift in Sources */,
+				24522BF82F2F290C00A7AFA2 /* AudioTestView.swift in Sources */,
 				C4812DECDE72AA3A5AC253AE /* KeyboardShortcuts.swift in Sources */,
 				7DF54ADDEA09A5224E2F9F19 /* MenuBarView.swift in Sources */,
 				09410AB1A7539EB1105270A9 /* OnboardingView.swift in Sources */,
@@ -331,7 +334,10 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AutoSub/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.autosub.app;
 				SDKROOT = macosx;
 			};
@@ -345,7 +351,10 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = AutoSub/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.autosub.app;
 				SDKROOT = macosx;
 			};

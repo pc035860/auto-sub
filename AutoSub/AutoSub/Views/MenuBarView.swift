@@ -36,10 +36,19 @@ struct MenuBarView: View {
             Divider()
 
             // 設定
-            SettingsLink {
-                Label("設定...", systemImage: "gear")
+            if #available(macOS 14.0, *) {
+                SettingsLink {
+                    Label("設定...", systemImage: "gear")
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            } else {
+                Button {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                } label: {
+                    Label("設定...", systemImage: "gear")
+                }
+                .keyboardShortcut(",", modifiers: .command)
             }
-            .keyboardShortcut(",", modifiers: .command)
 
             Divider()
 

@@ -8,7 +8,8 @@
 
 import Foundation
 import ScreenCaptureKit
-import AVFoundation
+@preconcurrency import AVFoundation
+@preconcurrency import AVFAudio
 import CoreMedia
 
 // MARK: - AudioCaptureError
@@ -238,10 +239,10 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// 複製音訊資料從 AudioBufferList 到 AVAudioPCMBuffer
     private func copyAudioData(
-        from abl: UnsafeBufferPointer<AudioBuffer>,
+        from abl: UnsafeMutableAudioBufferListPointer,
         to buffer: AVAudioPCMBuffer
     ) {
-        guard let floatChannelData = buffer.floatChannelData else { return }
+        guard buffer.floatChannelData != nil else { return }
 
         let channelCount = min(Int(buffer.format.channelCount), abl.count)
 
@@ -318,7 +319,7 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
 
         guard !samples.isEmpty else { return 0 }
 
-        let sumOfSquares = samples.reduce(0.0) { sum, sample in
+        let sumOfSquares: Float = samples.reduce(0.0) { sum, sample in
             let normalized = Float(sample) / Float(Int16.max)
             return sum + (normalized * normalized)
         }
@@ -411,8 +412,10 @@ class AudioCaptureService: NSObject, ObservableObject {
         // 4. 配置串流
         let config = SCStreamConfiguration()
         config.capturesAudio = true
-        config.captureMicrophone = false
         config.excludesCurrentProcessAudio = true  // 排除自身音訊避免迴授
+        if #available(macOS 15.0, *) {
+            config.captureMicrophone = false
+        }
 
         // 5. 建立 stream output（P4: 包含 onError）
         streamOutput = AudioStreamOutput(

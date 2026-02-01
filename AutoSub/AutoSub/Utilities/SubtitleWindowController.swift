@@ -10,7 +10,8 @@ import AppKit
 import SwiftUI
 
 /// 字幕視窗控制器
-class SubtitleWindowController {
+@MainActor
+final class SubtitleWindowController {
     private var window: NSWindow?
     private var hostingView: NSHostingView<AnyView>?
 
