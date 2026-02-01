@@ -54,6 +54,7 @@ class Transcriber:
         self._running = False
         self._start_time: float = 0
         self._utterance_buffer: list[str] = []  # 累積 buffer
+        self._max_buffer_chars: int = 80  # 最大累積字數，超過就強制 flush
 
     def start(self) -> None:
         """啟動 Deepgram 連線"""
@@ -97,9 +98,10 @@ class Transcriber:
             raise Exception("Deepgram connection timeout")
 
         # 註冊事件處理
+        # 注意：SDK v5.x 沒有獨立的 UTTERANCE_END 事件
+        # 所有訊息類型都透過 MESSAGE 事件接收，需檢查 message.type
         self._connection.on(EventType.MESSAGE, self._on_message)
         self._connection.on(EventType.ERROR, self._on_error)
-        self._connection.on(EventType.UTTERANCE_END, self._on_utterance_end)
 
         # 在背景線程中運行監聽
         def listen_loop():
@@ -135,7 +137,7 @@ class Transcriber:
                 pass  # 連線已關閉時忽略
 
     def _on_message(self, message) -> None:
-        """處理轉錄訊息"""
+        """處理轉錄訊息（SDK v5.x 所有訊息類型都透過此 callback）"""
         msg_type = getattr(message, "type", "Unknown")
 
         if msg_type == "Results":
@@ -154,10 +156,16 @@ class Transcriber:
                         if is_final:
                             # 累積到 buffer
                             self._utterance_buffer.append(transcript)
-                            print(f"[Transcriber] Added to buffer (total: {len(self._utterance_buffer)})", file=sys.stderr, flush=True)
+                            buffer_chars = sum(len(t) for t in self._utterance_buffer)
+                            print(f"[Transcriber] Added to buffer (items: {len(self._utterance_buffer)}, chars: {buffer_chars})", file=sys.stderr, flush=True)
+
+                            # 超過最大字數限制，強制 flush
+                            if buffer_chars >= self._max_buffer_chars:
+                                print(f"[Transcriber] Max buffer chars reached, forced flush", file=sys.stderr, flush=True)
+                                self._flush_buffer()
 
                         # speech_final=True 表示說話者停頓，flush buffer
-                        if speech_final and self._utterance_buffer:
+                        elif speech_final and self._utterance_buffer:
                             print(f"[Transcriber] speech_final triggered flush", file=sys.stderr, flush=True)
                             self._flush_buffer()
                 else:
@@ -165,12 +173,12 @@ class Transcriber:
             else:
                 print(f"[Transcriber] No channel in message", file=sys.stderr, flush=True)
 
-    def _on_utterance_end(self, event) -> None:
-        """UtteranceEnd 事件：基於 utterance_end_ms 的超時觸發"""
-        print(f"[Transcriber] UtteranceEnd event received", file=sys.stderr, flush=True)
-        if self._utterance_buffer:
-            print(f"[Transcriber] UtteranceEnd triggered flush", file=sys.stderr, flush=True)
-            self._flush_buffer()
+        elif msg_type == "UtteranceEnd":
+            # UtteranceEnd 事件：基於 utterance_end_ms 的超時觸發
+            print(f"[Transcriber] UtteranceEnd event received", file=sys.stderr, flush=True)
+            if self._utterance_buffer:
+                print(f"[Transcriber] UtteranceEnd triggered flush", file=sys.stderr, flush=True)
+                self._flush_buffer()
 
     def _flush_buffer(self) -> None:
         """輸出累積的 buffer 並清空"""
