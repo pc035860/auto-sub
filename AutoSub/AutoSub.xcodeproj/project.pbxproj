@@ -3,12 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		09410AB1A7539EB1105270A9 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69A292045BA4389325D83D0 /* OnboardingView.swift */; };
 		24522BF82F2F290C00A7AFA2 /* AudioTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24522BF72F2F290C00A7AFA2 /* AudioTestView.swift */; };
+		245242EA2F2F439600A7AFA2 /* backend in CopyFiles */ = {isa = PBXBuildFile; fileRef = 245242E92F2F439600A7AFA2 /* backend */; };
 		25E86B61BEB1DB61C2265303 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4844765DAFD2B6B8EDD5C6 /* AppState.swift */; };
 		39133CD5AC004907F2602DD0 /* PythonBridgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A4ECB92718F2724AF20089 /* PythonBridgeService.swift */; };
 		44CCC8AA6D76FA3E2046EDE4 /* ConfigurationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9783669E84B4444B9D4DC6E /* ConfigurationService.swift */; };
@@ -23,11 +24,25 @@
 		D7C5DA738B11AFDA8C2E7118 /* SubtitleOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A592E9AEC39965E17B99203 /* SubtitleOverlay.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		245242E42F2F42F700A7AFA2 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				245242EA2F2F439600A7AFA2 /* backend in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		07A4ECB92718F2724AF20089 /* PythonBridgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PythonBridgeService.swift; sourceTree = "<group>"; };
 		1BB4054B3BEDFCC8304C9A3B /* Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Configuration.swift; sourceTree = "<group>"; };
 		1F3F06E7117DA2DFB493C1B4 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		24522BF72F2F290C00A7AFA2 /* AudioTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTestView.swift; sourceTree = "<group>"; };
+		245242E92F2F439600A7AFA2 /* backend */ = {isa = PBXFileReference; lastKnownFileType = folder; name = backend; path = AutoSub/Resources/backend; sourceTree = "<group>"; };
 		270B2719EA436D73E92DAF76 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
 		3312F51BCFDEC5D738DAFF53 /* AutoSubApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoSubApp.swift; sourceTree = "<group>"; };
 		38C9283309B83D217BFE3BA5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -43,10 +58,15 @@
 		DDB74A62A6204281567D0C2A /* SubtitleWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		245242E22F2F401C00A7AFA2 /* backend */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = backend; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXGroup section */
 		120C1C68EF6A99AD2C984C90 = {
 			isa = PBXGroup;
 			children = (
+				245242E92F2F439600A7AFA2 /* backend */,
 				720FACC7B2F26F5495845AF8 /* AutoSub */,
 				8D181FAB379BCAD6228B04BE /* Products */,
 			);
@@ -55,7 +75,7 @@
 		5FB9BFFD3F4CCD6262AEC138 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				FBA31EE65181D5A3EBB8B29D /* backend */,
+				245242E22F2F401C00A7AFA2 /* backend */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -124,13 +144,6 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
-		FBA31EE65181D5A3EBB8B29D /* backend */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = backend;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -139,10 +152,14 @@
 			buildConfigurationList = DF1155BC36AA440517EA6A26 /* Build configuration list for PBXNativeTarget "AutoSub" */;
 			buildPhases = (
 				A10956FFC524C2DB418870F2 /* Sources */,
+				245242E42F2F42F700A7AFA2 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				245242E22F2F401C00A7AFA2 /* backend */,
 			);
 			name = AutoSub;
 			packageProductDependencies = (

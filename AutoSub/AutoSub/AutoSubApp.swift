@@ -23,6 +23,9 @@ struct AutoSubApp: App {
     /// 字幕是否顯示
     @State private var isSubtitleVisible = true
 
+    /// 初始化標記（確保只執行一次）
+    @State private var hasInitialized = false
+
     var body: some Scene {
         // Menu Bar App
         MenuBarExtra {
@@ -30,6 +33,9 @@ struct AutoSubApp: App {
                 .environmentObject(appState)
                 .environmentObject(audioService)
                 .environment(\.pythonBridge, pythonBridge)
+                .task {
+                    await performInitializationOnce()
+                }
         } label: {
             Image(systemName: menuBarIcon)
         }
@@ -52,85 +58,94 @@ struct AutoSubApp: App {
     }
 
     init() {
-        // 1. 初始化 PythonBridgeService（可能失敗）
+        // 只初始化 PythonBridgeService（不需要存取 StateObject）
         do {
             _pythonBridge = State(initialValue: try PythonBridgeService())
         } catch {
             _pythonBridgeError = State(initialValue: error)
             print("[AutoSubApp] Failed to initialize PythonBridgeService: \(error)")
         }
+    }
 
-        // 2. 載入設定
+    /// 執行一次性初始化（在 SwiftUI lifecycle 中呼叫）
+    @MainActor
+    private func performInitializationOnce() async {
+        guard !hasInitialized else { return }
+        hasInitialized = true
+
+        // 1. 載入設定
         loadConfiguration()
 
-        // 3. 註冊全域快捷鍵
+        // 2. 註冊全域快捷鍵
         setupKeyboardShortcuts()
 
-        // 4. 監聽字幕變化
+        // 3. 監聽字幕變化
         setupSubtitleObserver()
+
+        print("[AutoSubApp] Initialization completed")
     }
 
     /// 載入設定到 AppState
+    @MainActor
     private func loadConfiguration() {
-        Task { @MainActor in
-            let config = ConfigurationService.shared.loadConfiguration()
-            appState.deepgramApiKey = config.deepgramApiKey
-            appState.geminiApiKey = config.geminiApiKey
-            appState.sourceLanguage = config.sourceLanguage
-            appState.targetLanguage = config.targetLanguage
-            appState.subtitleFontSize = config.subtitleFontSize
-            appState.subtitleDisplayDuration = config.subtitleDisplayDuration
-            appState.showOriginalText = config.showOriginalText
-        }
+        let config = ConfigurationService.shared.loadConfiguration()
+        appState.deepgramApiKey = config.deepgramApiKey
+        appState.geminiApiKey = config.geminiApiKey
+        appState.sourceLanguage = config.sourceLanguage
+        appState.targetLanguage = config.targetLanguage
+        appState.subtitleFontSize = config.subtitleFontSize
+        appState.subtitleDisplayDuration = config.subtitleDisplayDuration
+        appState.showOriginalText = config.showOriginalText
     }
 
     /// 設定全域快捷鍵
+    @MainActor
     private func setupKeyboardShortcuts() {
-        Task { @MainActor in
-            KeyboardShortcuts.shared.register()
+        KeyboardShortcuts.shared.register()
 
-            // 監聽快捷鍵事件
-            NotificationCenter.default.addObserver(
-                forName: .toggleCapture,
-                object: nil,
-                queue: .main
-            ) { _ in
-                // toggleCapture 由 MenuBarView 處理
-            }
+        // 監聽快捷鍵事件
+        NotificationCenter.default.addObserver(
+            forName: .toggleCapture,
+            object: nil,
+            queue: .main
+        ) { _ in
+            // toggleCapture 由 MenuBarView 處理
+        }
 
-            NotificationCenter.default.addObserver(
-                forName: .toggleSubtitle,
-                object: nil,
-                queue: .main
-            ) { [self] _ in
-                Task { @MainActor in
-                    isSubtitleVisible.toggle()
-                    if isSubtitleVisible {
-                        updateSubtitleWindow()
-                    } else {
-                        subtitleWindowController.hide()
-                    }
+        NotificationCenter.default.addObserver(
+            forName: .toggleSubtitle,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            Task { @MainActor in
+                isSubtitleVisible.toggle()
+                if isSubtitleVisible {
+                    updateSubtitleWindow()
+                } else {
+                    subtitleWindowController.hide()
                 }
             }
         }
     }
 
-    /// 監聯字幕變化
+    /// 監聽字幕變化
+    @MainActor
     private func setupSubtitleObserver() {
-        Task { @MainActor in
-            // 使用 Combine 監聽 currentSubtitle 變化
-            // 注意：AutoSubApp 是 struct，使用值語義，不需要 weak self
-            appState.$currentSubtitle
-                .receive(on: DispatchQueue.main)
-                .sink { [appState, subtitleWindowController] subtitle in
-                    if subtitle != nil && appState.isCapturing {
-                        let overlay = SubtitleOverlay()
-                            .environmentObject(appState)
-                        subtitleWindowController.show(content: overlay)
-                    }
+        print("[AutoSubApp] Setting up subtitle observer...")
+        // 使用 Combine 監聯 currentSubtitle 變化
+        appState.$currentSubtitle
+            .receive(on: DispatchQueue.main)
+            .sink { [appState, subtitleWindowController] subtitle in
+                print("[AutoSubApp] Subtitle observer triggered, subtitle: \(subtitle?.translatedText ?? "nil"), isCapturing: \(appState.isCapturing)")
+                if subtitle != nil && appState.isCapturing {
+                    print("[AutoSubApp] Showing subtitle window!")
+                    let overlay = SubtitleOverlay()
+                        .environmentObject(appState)
+                    subtitleWindowController.show(content: overlay)
                 }
-                .store(in: &cancellables)
-        }
+            }
+            .store(in: &cancellables)
+        print("[AutoSubApp] Subtitle observer setup complete")
     }
 
     /// 更新字幕視窗

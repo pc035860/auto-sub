@@ -32,10 +32,14 @@ def output_json(data: dict):
 
 def main():
     """主程式"""
+    print("[Python] main() started", file=sys.stderr, flush=True)
+
     # 從環境變數讀取設定
     deepgram_key = os.environ.get("DEEPGRAM_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
+
+    print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
 
     if not deepgram_key or not gemini_key:
         output_json({
@@ -46,22 +50,29 @@ def main():
         sys.exit(1)
 
     # 初始化翻譯器
+    print("[Python] Initializing translator...", file=sys.stderr, flush=True)
     translator = Translator(api_key=gemini_key)
+    print("[Python] Translator initialized", file=sys.stderr, flush=True)
 
     # 翻譯回呼（含重試）
     def on_transcript(text: str):
+        print(f"[Python] on_transcript called with: {text}", file=sys.stderr, flush=True)
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                print(f"[Python] Translating (attempt {attempt + 1})...", file=sys.stderr, flush=True)
                 translated = translator.translate(text)
+                print(f"[Python] Translation result: {translated}", file=sys.stderr, flush=True)
                 if translated:
                     output_json({
                         "type": "subtitle",
                         "original": text,
                         "translation": translated
                     })
+                    print(f"[Python] Subtitle sent to stdout!", file=sys.stderr, flush=True)
                     return
-            except Exception:
+            except Exception as e:
+                print(f"[Python] Translation error: {e}", file=sys.stderr, flush=True)
                 if attempt == max_retries - 1:
                     output_json({
                         "type": "error",
@@ -70,20 +81,28 @@ def main():
                     })
 
     # 初始化轉錄器並開始處理
+    print("[Python] Initializing transcriber...", file=sys.stderr, flush=True)
     try:
         with Transcriber(
             api_key=deepgram_key,
             language=source_lang,
             on_transcript=on_transcript
         ) as transcriber:
+            print("[Python] Transcriber connected!", file=sys.stderr, flush=True)
             output_json({"type": "status", "status": "connected"})
+            print("[Python] Now reading audio from stdin...", file=sys.stderr, flush=True)
 
             # 從 stdin 讀取音訊
+            audio_chunks_received = 0
             while True:
                 try:
                     audio_data = sys.stdin.buffer.read(CHUNK_SIZE)
                     if not audio_data:
+                        print("[Python] stdin EOF received, exiting...", file=sys.stderr, flush=True)
                         break
+                    audio_chunks_received += 1
+                    if audio_chunks_received % 100 == 1:  # 每 100 chunks 輸出一次
+                        print(f"[Python] Audio chunks received: {audio_chunks_received}", file=sys.stderr, flush=True)
                     transcriber.send_audio(audio_data)
                 except Exception as e:
                     output_json({

@@ -53,13 +53,17 @@ class Transcriber:
 
     def start(self) -> None:
         """啟動 Deepgram 連線"""
+        print("[Transcriber] start() called", file=sys.stderr, flush=True)
         self._start_time = time.time()
         self._running = True
 
         # 建立客戶端
+        print("[Transcriber] Creating DeepgramClient...", file=sys.stderr, flush=True)
         self._client = DeepgramClient(api_key=self.api_key)
+        print("[Transcriber] DeepgramClient created", file=sys.stderr, flush=True)
 
         # 建立 WebSocket 連線
+        print("[Transcriber] Connecting to Deepgram...", file=sys.stderr, flush=True)
         self._context_manager = self._client.listen.v1.connect(
             model="nova-2",
             language=self.language,
@@ -70,7 +74,21 @@ class Transcriber:
             sample_rate=24000,
             channels=2,
         )
-        self._connection = self._context_manager.__enter__()
+        print("[Transcriber] Entering context manager...", file=sys.stderr, flush=True)
+
+        # 使用 timeout 機制來診斷連線問題
+        import concurrent.futures
+        def connect_with_timeout():
+            return self._context_manager.__enter__()
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(connect_with_timeout)
+                self._connection = future.result(timeout=10)  # 10 秒超時
+            print("[Transcriber] WebSocket connected!", file=sys.stderr, flush=True)
+        except concurrent.futures.TimeoutError:
+            print("[Transcriber] ERROR: Connection timed out after 10 seconds!", file=sys.stderr, flush=True)
+            raise Exception("Deepgram connection timeout")
 
         # 註冊事件處理
         self._connection.on(EventType.MESSAGE, self._on_message)
@@ -112,6 +130,7 @@ class Transcriber:
     def _on_message(self, message) -> None:
         """處理轉錄訊息"""
         msg_type = getattr(message, "type", "Unknown")
+
         if msg_type == "Results":
             channel = getattr(message, "channel", None)
             if channel:
@@ -119,9 +138,17 @@ class Transcriber:
                 if alternatives:
                     transcript = getattr(alternatives[0], "transcript", "")
                     is_final = getattr(message, "is_final", False)
-                    if transcript.strip() and is_final:
-                        if self.on_transcript:
-                            self.on_transcript(transcript)
+                    # 只有在有 transcript 內容時才輸出
+                    if transcript.strip():
+                        print(f"[Transcriber] transcript='{transcript}', is_final={is_final}", file=sys.stderr, flush=True)
+                        if is_final:
+                            print(f"[Transcriber] FINAL - Sending to callback: {transcript}", file=sys.stderr, flush=True)
+                            if self.on_transcript:
+                                self.on_transcript(transcript)
+                else:
+                    print(f"[Transcriber] No alternatives in channel", file=sys.stderr, flush=True)
+            else:
+                print(f"[Transcriber] No channel in message", file=sys.stderr, flush=True)
 
     def _on_error(self, error) -> None:
         """處理錯誤"""

@@ -17,12 +17,15 @@ final class SubtitleWindowController {
 
     /// 顯示字幕視窗
     func show<Content: View>(content: Content) {
+        print("[SubtitleWindow] show() called")
         if window == nil {
+            print("[SubtitleWindow] Creating window...")
             createWindow()
         }
 
         hostingView?.rootView = AnyView(content)
         window?.orderFront(nil)
+        print("[SubtitleWindow] Window shown, frame: \(window?.frame ?? .zero)")
     }
 
     /// 隱藏字幕視窗
@@ -54,9 +57,10 @@ final class SubtitleWindowController {
         window?.isOpaque = false
         window?.backgroundColor = .clear
         window?.hasShadow = false
-        window?.level = .statusBar + 1  // 置頂
-        window?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window?.level = .screenSaver  // 最高層級，確保置頂
+        window?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window?.ignoresMouseEvents = true  // 點擊穿透
+        window?.isMovableByWindowBackground = false
 
         hostingView = NSHostingView(rootView: AnyView(EmptyView()))
         window?.contentView = hostingView

@@ -89,11 +89,16 @@ struct MenuBarView: View {
     }
 
     private func startCapture() async {
+        print("[MenuBarView] startCapture called")
+        print("[MenuBarView] pythonBridge is \(pythonBridge == nil ? "nil" : "available")")
+
         guard let bridge = pythonBridge else {
+            print("[MenuBarView] ERROR: Python Bridge is nil!")
             appState.status = .error
             appState.errorMessage = "Python Bridge 未初始化"
             return
         }
+        print("[MenuBarView] Python Bridge found, starting...")
 
         // 捕獲 appState 的弱引用避免循環參考
         let state = appState
@@ -126,8 +131,11 @@ struct MenuBarView: View {
 
             // 3. 設定 Python Bridge 回呼
             bridge.onSubtitle = { [weak state] subtitle in
+                print("[MenuBarView] onSubtitle callback received: \(subtitle.translatedText)")
                 Task { @MainActor in
+                    print("[MenuBarView] Setting currentSubtitle...")
                     state?.currentSubtitle = subtitle
+                    print("[MenuBarView] currentSubtitle set, isCapturing: \(state?.isCapturing ?? false)")
                 }
             }
             bridge.onStatusChange = { status in

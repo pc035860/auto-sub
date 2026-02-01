@@ -169,6 +169,7 @@ class PythonBridgeService: ObservableObject {
 
         // 4. 設定環境變數（傳遞 API Keys）
         var env = ProcessInfo.processInfo.environment
+        env["PYTHONUNBUFFERED"] = "1"  // 防止 stdout 緩衝導致阻塞
         env["DEEPGRAM_API_KEY"] = config.deepgramApiKey
         env["GEMINI_API_KEY"] = config.geminiApiKey
         env["SOURCE_LANGUAGE"] = config.sourceLanguage
@@ -267,12 +268,16 @@ class PythonBridgeService: ObservableObject {
     /// 注意：這個方法從背景執行緒被呼叫（透過 readabilityHandler）
     /// 使用 nonisolated 標記，因為這是在 Sendable closure 中被呼叫
     private nonisolated func parseAndDispatch(_ jsonLine: String) {
+        print("[PythonBridge] Received JSON line: \(jsonLine)")
+
         guard let jsonData = jsonLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let type = json["type"] as? String else {
             print("[PythonBridge] Failed to parse JSON: \(jsonLine)")
             return
         }
+
+        print("[PythonBridge] Parsed type: \(type)")
 
         // 回到主線程處理 UI 更新（使用 Task @MainActor）
         Task { @MainActor [weak self] in
@@ -282,8 +287,11 @@ class PythonBridgeService: ObservableObject {
             case "subtitle":
                 if let original = json["original"] as? String,
                    let translation = json["translation"] as? String {
+                    print("[PythonBridge] Subtitle received - original: \(original), translation: \(translation)")
                     let entry = SubtitleEntry(original: original, translated: translation)
+                    print("[PythonBridge] Calling onSubtitle callback...")
                     self.onSubtitle?(entry)
+                    print("[PythonBridge] onSubtitle callback done")
                 }
             case "status":
                 if let status = json["status"] as? String {
@@ -333,13 +341,17 @@ class PythonBridgeService: ObservableObject {
         )
     }
 
-    /// 查找系統 Python 3
+    /// 查找系統 Python 3.11+（優先使用 3.12，避免 3.14 相容性問題）
     private func findSystemPython() throws -> URL {
-        // 檢查常見路徑（macOS 相容性）
+        // 優先使用穩定版本的 Python（3.12 > 3.13 > 通用 python3）
         let commonPaths = [
-            "/usr/bin/python3",           // macOS 預設
-            "/usr/local/bin/python3",     // Homebrew Intel
-            "/opt/homebrew/bin/python3"   // Homebrew Apple Silicon
+            "/opt/homebrew/bin/python3.12",  // Homebrew Python 3.12 (最穩定)
+            "/opt/homebrew/bin/python3.13",  // Homebrew Python 3.13
+            "/usr/local/bin/python3.12",     // Homebrew Intel 3.12
+            "/usr/local/bin/python3.13",     // Homebrew Intel 3.13
+            "/opt/homebrew/bin/python3",     // Homebrew Apple Silicon (可能是 3.14)
+            "/usr/local/bin/python3",        // Homebrew Intel
+            "/usr/bin/python3"               // macOS 預設 (通常版本較舊)
         ]
 
         for path in commonPaths {

@@ -14,7 +14,7 @@ struct SubtitleOverlay: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            if let subtitle = appState.currentSubtitle, isVisible {
+            if let subtitle = appState.currentSubtitle {
                 // 原文（日文）
                 if appState.showOriginalText {
                     Text(subtitle.originalText)
@@ -36,6 +36,12 @@ struct SubtitleOverlay: View {
         )
         .opacity(isVisible ? 1 : 0)
         .animation(.easeInOut(duration: 0.3), value: isVisible)
+        .onAppear {
+            // 視窗出現時立即顯示字幕
+            if appState.currentSubtitle != nil {
+                showSubtitle()
+            }
+        }
         .onChangeCompat(of: appState.currentSubtitle) {
             if appState.currentSubtitle != nil {
                 showSubtitle()
