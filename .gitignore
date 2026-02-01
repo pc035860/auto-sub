@@ -1,13 +1,39 @@
 # Environment
+.env
 poc/.env
 
 # Python
+.venv/
 poc/.venv/
+AutoSub/AutoSub/Resources/backend/.venv/
 **/__pycache__/
 *.pyc
+*.pyo
+*.egg-info/
 
 # Swift build
+.build/
 poc/systemAudioDump/.build/
+
+# Xcode
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.moved-aside
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+*.swp
+*~
 
 # Specs
 specs/handover/
+poc/specs/handover/
+
+# Logs
+*.log
+poc/log_*

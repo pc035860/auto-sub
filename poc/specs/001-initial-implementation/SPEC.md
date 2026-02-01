@@ -8,9 +8,12 @@
 | **UI 框架** | SwiftUI | macOS 13+ | MenuBarExtra Scene |
 | **音訊擷取** | ScreenCaptureKit | macOS 13+ | 系統音訊擷取 |
 | **Python** | Python | ≥3.11 | 用戶環境 |
-| **語音辨識** | Deepgram SDK | 5.3.2 | WebSocket 即時串流 |
+| **語音辨識** | Deepgram SDK | 5.3.2 | WebSocket 即時串流（同步 + threading） |
 | **翻譯** | Google GenAI SDK | 1.61.0 | gemini-2.5-flash-lite |
+| **WebSocket** | websockets | ≥13.0 | Deepgram SDK 依賴 |
 | **依賴管理** | uv | 最新 | 快速 Python 套件管理 |
+
+> ⚠️ **模型停用警告**：`gemini-2.5-flash-lite` 預計於 **2026/07/22** 停用，届時需遷移至新版本。
 
 ---
 
@@ -624,17 +627,22 @@ class SubtitleWindowController {
 
 ### 6.1 main.py
 
+> **設計決策**：使用同步版本 + threading，基於 Deepgram SDK v5 官方推薦的即時音訊處理方式。
+
 ```python
 #!/usr/bin/env python3
 """
 Auto-Sub Python Backend
 從 stdin 讀取 PCM 音訊，輸出翻譯後的字幕到 stdout
+
+協議：
+- 輸入 (stdin)：二進位 PCM 音訊 (24kHz, 16-bit, stereo)
+- 輸出 (stdout)：JSON Lines 格式
 """
 
 import sys
 import os
 import json
-import asyncio
 from transcriber import Transcriber
 from translator import Translator
 
@@ -646,7 +654,7 @@ SAMPLE_RATE = 24000
 CHANNELS = 2
 BYTES_PER_SAMPLE = 2
 CHUNK_DURATION_MS = 100
-CHUNK_SIZE = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 1000
+CHUNK_SIZE = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 1000  # 9600 bytes
 
 
 def output_json(data: dict):
@@ -654,21 +662,26 @@ def output_json(data: dict):
     print(json.dumps(data, ensure_ascii=False), flush=True)
 
 
-async def main():
+def main():
+    """主程式"""
     # 從環境變數讀取設定
     deepgram_key = os.environ.get("DEEPGRAM_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
 
     if not deepgram_key or not gemini_key:
-        output_json({"type": "error", "message": "Missing API keys", "code": "CONFIG_ERROR"})
+        output_json({
+            "type": "error",
+            "message": "Missing API keys",
+            "code": "CONFIG_ERROR"
+        })
         sys.exit(1)
 
     # 初始化翻譯器
     translator = Translator(api_key=gemini_key)
 
     # 翻譯回呼（含重試）
-    async def on_transcript(text: str):
+    def on_transcript(text: str):
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -680,62 +693,87 @@ async def main():
                         "translation": translated
                     })
                     return
-            except Exception as e:
+            except Exception:
                 if attempt == max_retries - 1:
                     output_json({
                         "type": "error",
-                        "message": f"Translation failed: {str(e)}",
+                        "message": "Translation failed",
                         "code": "TRANSLATE_ERROR"
                     })
 
-    # 初始化轉錄器
-    async with Transcriber(
-        api_key=deepgram_key,
-        language=source_lang,
-        on_transcript=on_transcript
-    ) as transcriber:
-        output_json({"type": "status", "status": "connected"})
+    # 初始化轉錄器並開始處理
+    try:
+        with Transcriber(
+            api_key=deepgram_key,
+            language=source_lang,
+            on_transcript=on_transcript
+        ) as transcriber:
+            output_json({"type": "status", "status": "connected"})
 
-        # 從 stdin 讀取音訊
-        while True:
-            try:
-                audio_data = sys.stdin.buffer.read(CHUNK_SIZE)
-                if not audio_data:
+            # 從 stdin 讀取音訊
+            while True:
+                try:
+                    audio_data = sys.stdin.buffer.read(CHUNK_SIZE)
+                    if not audio_data:
+                        break
+                    transcriber.send_audio(audio_data)
+                except Exception as e:
+                    output_json({
+                        "type": "error",
+                        "message": str(e),
+                        "code": "AUDIO_ERROR"
+                    })
                     break
-                await transcriber.send_audio(audio_data)
-            except Exception as e:
-                output_json({
-                    "type": "error",
-                    "message": str(e),
-                    "code": "AUDIO_ERROR"
-                })
-                break
+
+    except Exception:
+        output_json({
+            "type": "error",
+            "message": "Failed to connect to speech service",
+            "code": "DEEPGRAM_ERROR"
+        })
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
 ```
 
 ### 6.2 transcriber.py
+
+> **設計決策**：使用同步客戶端 + threading，這是 Deepgram SDK v5 官方推薦的即時音訊處理方式。
+>
+> **API 說明**：
+> - `DeepgramClient`：同步客戶端（推薦用於即時轉錄）
+> - `EventType`：事件類型列舉（取代舊版的 `LiveTranscriptionEvents`）
+> - `ListenV1MediaMessage`：音訊資料封裝類型
+> - `client.listen.v1.connect()`：建立 WebSocket 連線（選項直接作為參數傳入）
 
 ```python
 """
 Deepgram 即時語音轉文字模組
 使用 Deepgram SDK v5.3.2
+基於官方推薦的同步 + threading 實作
 """
 
 import sys
-import asyncio
+import threading
+import time
 from typing import Callable, Optional
-from deepgram import (
-    DeepgramClient,
-    DeepgramClientOptions,
-    LiveTranscriptionEvents,
-    LiveOptions,
-)
+
+from deepgram import DeepgramClient
+from deepgram.core.events import EventType
+from deepgram.extensions.types.sockets import ListenV1MediaMessage
 
 
 class Transcriber:
+    """
+    Deepgram 即時轉錄器
+
+    使用 context manager 模式：
+        with Transcriber(api_key, on_transcript=callback) as t:
+            t.send_audio(data)
+    """
+
     def __init__(
         self,
         api_key: str,
@@ -743,35 +781,35 @@ class Transcriber:
         on_transcript: Optional[Callable[[str], None]] = None,
         endpointing_ms: int = 300,
     ):
+        """
+        初始化轉錄器
+
+        Args:
+            api_key: Deepgram API Key
+            language: 語言代碼 (預設 "ja" 日語)
+            on_transcript: 轉錄完成回呼
+            endpointing_ms: 靜音判定時間 (毫秒)
+        """
         self.api_key = api_key
         self.language = language
         self.on_transcript = on_transcript
         self.endpointing_ms = endpointing_ms
 
-        self.client: Optional[DeepgramClient] = None
-        self.connection = None
+        self._client: Optional[DeepgramClient] = None
+        self._context_manager = None
+        self._connection = None
+        self._listener_thread: Optional[threading.Thread] = None
+        self._running = False
 
-    async def __aenter__(self):
-        await self.connect()
-        return self
+    def start(self) -> None:
+        """啟動 Deepgram 連線"""
+        self._running = True
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.disconnect()
+        # 建立客戶端
+        self._client = DeepgramClient(api_key=self.api_key)
 
-    async def connect(self):
-        # 建立客戶端（啟用 keepalive）
-        config = DeepgramClientOptions(options={"keepalive": "true"})
-        self.client = DeepgramClient(self.api_key, config)
-
-        # 建立 WebSocket 連線
-        self.connection = self.client.listen.asyncwebsocket.v("1")
-
-        # 註冊事件處理
-        self.connection.on(LiveTranscriptionEvents.Transcript, self._on_message)
-        self.connection.on(LiveTranscriptionEvents.Error, self._on_error)
-
-        # 連線選項
-        options = LiveOptions(
+        # 建立 WebSocket 連線（選項直接作為參數）
+        self._context_manager = self._client.listen.v1.connect(
             model="nova-2",
             language=self.language,
             smart_format=True,
@@ -781,33 +819,70 @@ class Transcriber:
             sample_rate=24000,
             channels=2,
         )
+        self._connection = self._context_manager.__enter__()
 
-        await self.connection.start(options)
+        # 註冊事件處理（使用 EventType 而非 LiveTranscriptionEvents）
+        self._connection.on(EventType.MESSAGE, self._on_message)
+        self._connection.on(EventType.ERROR, self._on_error)
 
-    async def disconnect(self):
-        if self.connection:
-            await self.connection.finish()
+        # 在背景線程中運行監聽
+        def listen_loop():
+            try:
+                self._connection.start_listening()
+            except Exception as e:
+                if self._running:
+                    print(f"[Listener Error] {e}", file=sys.stderr)
 
-    async def send_audio(self, audio_data: bytes):
-        if self.connection:
-            await self.connection.send(audio_data)
+        self._listener_thread = threading.Thread(target=listen_loop, daemon=True)
+        self._listener_thread.start()
 
-    def _on_message(self, *args, **kwargs):
-        result = kwargs.get("result")
-        if not result:
-            return
+        # 等待連線建立
+        time.sleep(0.1)
 
-        # 只處理最終結果
-        if not result.is_final:
-            return
+    def stop(self) -> None:
+        """停止 Deepgram 連線"""
+        self._running = False
+        if self._context_manager:
+            try:
+                self._context_manager.__exit__(None, None, None)
+            except Exception:
+                pass
+            self._context_manager = None
+            self._connection = None
 
-        transcript = result.channel.alternatives[0].transcript
-        if transcript and self.on_transcript:
-            asyncio.create_task(self.on_transcript(transcript))
+    def send_audio(self, audio_data: bytes) -> None:
+        """發送音訊資料到 Deepgram（使用 ListenV1MediaMessage 封裝）"""
+        if self._connection and self._running:
+            try:
+                self._connection.send_media(ListenV1MediaMessage(audio_data))
+            except Exception:
+                pass  # 連線已關閉時忽略
 
-    def _on_error(self, *args, **kwargs):
-        error = kwargs.get("error")
-        print(f"Deepgram error: {error}", file=sys.stderr)
+    def _on_message(self, message) -> None:
+        """處理轉錄訊息"""
+        msg_type = getattr(message, "type", "Unknown")
+        if msg_type == "Results":
+            channel = getattr(message, "channel", None)
+            if channel:
+                alternatives = getattr(channel, "alternatives", [])
+                if alternatives:
+                    transcript = getattr(alternatives[0], "transcript", "")
+                    is_final = getattr(message, "is_final", False)
+                    if transcript.strip() and is_final:
+                        if self.on_transcript:
+                            self.on_transcript(transcript)
+
+    def _on_error(self, error) -> None:
+        """處理錯誤"""
+        if self._running:
+            print(f"[Deepgram Error] {error}", file=sys.stderr)
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
 ```
 
 ### 6.3 translator.py
@@ -858,7 +933,11 @@ class Translator:
 deepgram-sdk>=5.3.2
 google-genai>=1.61.0
 python-dotenv>=1.2.1
+websockets>=13.0
 ```
+
+> **依賴說明**：
+> - `websockets>=13.0`：Deepgram SDK 的 WebSocket 依賴，13.0+ 版本避免舊 API 相容性問題
 
 ---
 
