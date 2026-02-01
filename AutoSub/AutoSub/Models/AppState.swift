@@ -37,5 +37,12 @@ class AppState: ObservableObject {
     @Published var showOriginalText: Bool = true
 
     // MARK: - 錯誤訊息
-    @Published var lastError: String?
+    @Published var errorMessage: String?
+
+    // MARK: - Computed Properties
+
+    /// 是否已準備好（API Keys 都已設定）
+    var isReady: Bool {
+        !deepgramApiKey.isEmpty && !geminiApiKey.isEmpty
+    }
 }

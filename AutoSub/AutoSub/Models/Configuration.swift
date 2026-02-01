@@ -21,11 +21,17 @@ struct Configuration: Codable {
         deepgramApiKey: String = "",
         geminiApiKey: String = "",
         sourceLanguage: String = "ja",
-        targetLanguage: String = "zh-TW"
+        targetLanguage: String = "zh-TW",
+        subtitleFontSize: CGFloat = 24,
+        subtitleDisplayDuration: TimeInterval = 4.0,
+        showOriginalText: Bool = true
     ) {
         self.deepgramApiKey = deepgramApiKey
         self.geminiApiKey = geminiApiKey
         self.sourceLanguage = sourceLanguage
         self.targetLanguage = targetLanguage
+        self.subtitleFontSize = subtitleFontSize
+        self.subtitleDisplayDuration = subtitleDisplayDuration
+        self.showOriginalText = showOriginalText
     }
 }

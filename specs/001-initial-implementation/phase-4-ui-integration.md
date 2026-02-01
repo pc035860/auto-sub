@@ -14,53 +14,53 @@
 
 ### 4.1 建立 AppState
 
-- [ ] 建立 `AutoSub/AutoSub/Models/AppState.swift`
-- [ ] 定義應用程式狀態（idle, capturing, warning, error）
-- [ ] 整合設定和字幕狀態
+- [x] 建立 `AutoSub/AutoSub/Models/AppState.swift`
+- [x] 定義應用程式狀態（idle, capturing, warning, error）
+- [x] 整合設定和字幕狀態
 
 ### 4.2 建立 AutoSubApp（App 入口）
 
-- [ ] 修改 `AutoSub/AutoSub/AutoSubApp.swift`
-- [ ] 配置 `MenuBarExtra` Scene
-- [ ] 配置 Settings Scene
-- [ ] 整合 Services
+- [x] 修改 `AutoSub/AutoSub/AutoSubApp.swift`
+- [x] 配置 `MenuBarExtra` Scene
+- [x] 配置 Settings Scene
+- [x] 整合 Services
 
 ### 4.3 建立 MenuBarView
 
-- [ ] 建立 `AutoSub/AutoSub/Views/MenuBarView.swift`
-- [ ] 實作開始/停止控制
-- [ ] 顯示狀態資訊
-- [ ] 開啟設定視窗
+- [x] 建立 `AutoSub/AutoSub/Views/MenuBarView.swift`
+- [x] 實作開始/停止控制
+- [x] 顯示狀態資訊
+- [x] 開啟設定視窗
 
 ### 4.4 建立 SettingsView
 
-- [ ] 建立 `AutoSub/AutoSub/Views/SettingsView.swift`
-- [ ] API Keys 輸入
-- [ ] 語言設定
-- [ ] 字幕樣式設定
+- [x] 建立 `AutoSub/AutoSub/Views/SettingsView.swift`
+- [x] API Keys 輸入
+- [x] 語言設定
+- [x] 字幕樣式設定
 
 ### 4.5 建立 SubtitleOverlay
 
-- [ ] 建立 `AutoSub/AutoSub/Views/SubtitleOverlay.swift`
-- [ ] 雙語字幕顯示
-- [ ] 自動顯示/隱藏動畫
+- [x] 建立 `AutoSub/AutoSub/Views/SubtitleOverlay.swift`
+- [x] 雙語字幕顯示
+- [x] 自動顯示/隱藏動畫
 
 ### 4.6 建立 SubtitleWindowController
 
-- [ ] 建立 `AutoSub/AutoSub/Utilities/SubtitleWindowController.swift`
-- [ ] 建立透明無邊框視窗
-- [ ] 設定置頂和點擊穿透
+- [x] 建立 `AutoSub/AutoSub/Utilities/SubtitleWindowController.swift`
+- [x] 建立透明無邊框視窗
+- [x] 設定置頂和點擊穿透
 
 ### 4.7 建立 ConfigurationService
 
-- [ ] 建立 `AutoSub/AutoSub/Services/ConfigurationService.swift`
-- [ ] 實作設定讀寫
-- [ ] 實作 Keychain 儲存 API Keys
+- [x] 建立 `AutoSub/AutoSub/Services/ConfigurationService.swift`
+- [x] 實作設定讀寫
+- [x] 實作 Keychain 儲存 API Keys
 
 ### 4.8 實作快捷鍵
 
-- [ ] 建立 `AutoSub/AutoSub/Utilities/KeyboardShortcuts.swift`
-- [ ] 實作全域快捷鍵（開始/停止、隱藏字幕）
+- [x] 建立 `AutoSub/AutoSub/Utilities/KeyboardShortcuts.swift`
+- [x] 實作全域快捷鍵（開始/停止、隱藏字幕）
 
 ## Code Examples
 
@@ -360,13 +360,13 @@ class SubtitleWindowController {
 
 ### Expected Outcomes
 
-- [ ] Menu Bar 圖示正確顯示
-- [ ] 狀態變化時圖示會改變
-- [ ] 設定視窗可輸入 API Keys
-- [ ] API Keys 儲存到 Keychain
-- [ ] 字幕覆蓋層正確顯示
-- [ ] 字幕自動隱藏
-- [ ] 快捷鍵正常運作
+- [x] Menu Bar 圖示正確顯示
+- [x] 狀態變化時圖示會改變
+- [x] 設定視窗可輸入 API Keys
+- [x] API Keys 儲存到 Keychain
+- [x] 字幕覆蓋層正確顯示
+- [x] 字幕自動隱藏
+- [x] 快捷鍵正常運作
 
 ## Files Created/Modified
 

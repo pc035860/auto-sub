@@ -9,37 +9,30 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
-    @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject var audioService: AudioCaptureService
+    @Environment(\.pythonBridge) var pythonBridge: PythonBridgeService?
 
     var body: some View {
-        VStack {
+        VStack(alignment: .leading, spacing: 8) {
             // 狀態顯示
             HStack {
                 Circle()
                     .fill(statusColor)
                     .frame(width: 8, height: 8)
                 Text(statusText)
-                    .font(.headline)
             }
-            .padding(.bottom, 8)
+            .padding(.horizontal)
 
             Divider()
 
             // 開始/停止按鈕
             Button(action: toggleCapture) {
                 Label(
-                    appState.isCapturing ? "停止字幕" : "開始字幕",
-                    systemImage: appState.isCapturing ? "stop.circle" : "play.circle"
+                    appState.isCapturing ? "停止擷取" : "開始擷取",
+                    systemImage: appState.isCapturing ? "stop.fill" : "play.fill"
                 )
             }
-            .keyboardShortcut("s", modifiers: [.command, .shift])
-
-            // 開發測試（之後可移除）
-            Button {
-                openWindow(id: "audio-test")
-            } label: {
-                Label("Audio Test", systemImage: "waveform")
-            }
+            .disabled(!appState.isReady)
 
             Divider()
 
@@ -48,30 +41,28 @@ struct MenuBarView: View {
                 SettingsLink {
                     Label("設定...", systemImage: "gear")
                 }
-                .keyboardShortcut(",", modifiers: .command)
             } else {
                 Button {
                     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 } label: {
                     Label("設定...", systemImage: "gear")
                 }
-                .keyboardShortcut(",", modifiers: .command)
             }
 
             Divider()
 
             // 結束
-            Button("結束 AutoSub") {
+            Button("結束 Auto-Sub") {
                 NSApplication.shared.terminate(nil)
             }
-            .keyboardShortcut("q", modifiers: .command)
         }
-        .padding()
+        .padding(.vertical, 8)
+        .frame(width: 200)
     }
 
     private var statusColor: Color {
         switch appState.status {
-        case .idle: return .gray
+        case .idle: return .primary
         case .capturing: return .green
         case .warning: return .yellow
         case .error: return .red
@@ -82,14 +73,117 @@ struct MenuBarView: View {
         switch appState.status {
         case .idle: return "待機中"
         case .capturing: return "擷取中"
-        case .warning: return "連線不穩"
-        case .error: return "錯誤"
+        case .warning: return "警告"
+        case .error: return appState.errorMessage ?? "錯誤"
         }
     }
 
     private func toggleCapture() {
-        // TODO: Phase 3 實作
-        appState.isCapturing.toggle()
-        appState.status = appState.isCapturing ? .capturing : .idle
+        Task { @MainActor in
+            if appState.isCapturing {
+                await stopCapture()
+            } else {
+                await startCapture()
+            }
+        }
+    }
+
+    private func startCapture() async {
+        guard let bridge = pythonBridge else {
+            appState.status = .error
+            appState.errorMessage = "Python Bridge 未初始化"
+            return
+        }
+
+        // 捕獲 appState 的弱引用避免循環參考
+        let state = appState
+
+        do {
+            // 1. 建立設定
+            let config = Configuration(
+                deepgramApiKey: state.deepgramApiKey,
+                geminiApiKey: state.geminiApiKey,
+                sourceLanguage: state.sourceLanguage,
+                targetLanguage: state.targetLanguage,
+                subtitleFontSize: state.subtitleFontSize,
+                subtitleDisplayDuration: state.subtitleDisplayDuration,
+                showOriginalText: state.showOriginalText
+            )
+
+            // 2. 先設定錯誤回呼（在啟動前）
+            audioService.onError = { [weak state] error in
+                Task { @MainActor in
+                    state?.status = .error
+                    state?.errorMessage = error.localizedDescription
+                }
+            }
+            bridge.onError = { [weak state] message in
+                Task { @MainActor in
+                    state?.status = .warning
+                    state?.errorMessage = message
+                }
+            }
+
+            // 3. 設定 Python Bridge 回呼
+            bridge.onSubtitle = { [weak state] subtitle in
+                Task { @MainActor in
+                    state?.currentSubtitle = subtitle
+                }
+            }
+            bridge.onStatusChange = { status in
+                print("[MenuBarView] Python status: \(status)")
+            }
+
+            // 4. 啟動 Python Backend
+            try await bridge.start(config: config)
+
+            // 5. 設定音訊回呼並開始擷取
+            audioService.onAudioData = { [weak bridge] data in
+                bridge?.sendAudio(data)
+            }
+
+            do {
+                try await audioService.startCapture()
+            } catch {
+                // 音訊擷取失敗，回滾 Python Bridge
+                bridge.stop()
+                throw error
+            }
+
+            // 6. 更新狀態
+            state.isCapturing = true
+            state.status = .capturing
+
+        } catch {
+            // 清理回呼
+            audioService.onAudioData = nil
+            audioService.onError = nil
+            bridge.onSubtitle = nil
+            bridge.onError = nil
+            bridge.onStatusChange = nil
+
+            state.status = .error
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func stopCapture() async {
+        // 1. 停止音訊擷取
+        await audioService.stopCapture()
+
+        // 2. 停止 Python Bridge
+        pythonBridge?.stop()
+
+        // 3. 清理回呼
+        audioService.onAudioData = nil
+        audioService.onError = nil
+        pythonBridge?.onSubtitle = nil
+        pythonBridge?.onError = nil
+        pythonBridge?.onStatusChange = nil
+
+        // 4. 更新狀態
+        appState.isCapturing = false
+        appState.status = .idle
+        appState.currentSubtitle = nil
     }
 }
