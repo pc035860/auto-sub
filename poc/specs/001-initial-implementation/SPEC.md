@@ -462,28 +462,64 @@ enum AudioCaptureError: Error, LocalizedError {
 ```swift
 import Foundation
 
+/// Python Bridge 錯誤類型
+enum PythonBridgeError: Error, LocalizedError {
+    case bundleResourceNotFound
+    case appSupportNotFound
+    case pythonNotFound
+    case venvSetupFailed(String)
+    case dependencyInstallFailed(String)
+    case processStartFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .bundleResourceNotFound:
+            return "找不到 App Bundle 資源目錄"
+        case .appSupportNotFound:
+            return "找不到 Application Support 目錄"
+        case .pythonNotFound:
+            return "找不到 Python 3，請先安裝"
+        case .venvSetupFailed(let detail):
+            return "Python 虛擬環境建立失敗: \(detail)"
+        case .dependencyInstallFailed(let detail):
+            return "依賴安裝失敗: \(detail)"
+        case .processStartFailed(let detail):
+            return "Python 程序啟動失敗: \(detail)"
+        }
+    }
+}
+
 @MainActor
 class PythonBridgeService: ObservableObject {
     private var process: Process?
     private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
 
     var onSubtitle: ((SubtitleEntry) -> Void)?
     var onError: ((String) -> Void)?
+    var onStatusChange: ((String) -> Void)?
 
     private let backendPath: URL
     private let venvPath: URL
 
-    init() {
-        // 後端位於 App Bundle
-        let resourcePath = Bundle.main.resourceURL!
+    // JSON Lines 緩衝（處理跨 chunk 的 JSON 行）
+    private var outputBuffer = ""
+
+    init() throws {
+        // 後端位於 App Bundle（安全解包）
+        guard let resourcePath = Bundle.main.resourceURL else {
+            throw PythonBridgeError.bundleResourceNotFound
+        }
         backendPath = resourcePath.appendingPathComponent("backend")
 
-        // venv 位於 Application Support
-        let appSupport = FileManager.default.urls(
+        // venv 位於 Application Support（使用拋出式 API）
+        let appSupport = try FileManager.default.url(
             for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
         venvPath = appSupport.appendingPathComponent("AutoSub/.venv")
     }
 
@@ -497,9 +533,15 @@ class PythonBridgeService: ObservableObject {
         process = Process()
         stdinPipe = Pipe()
         stdoutPipe = Pipe()
+        stderrPipe = Pipe()
 
         let pythonPath = venvPath.appendingPathComponent("bin/python3")
         let mainPyPath = backendPath.appendingPathComponent("main.py")
+
+        // 檢查 Python 是否存在
+        guard FileManager.default.fileExists(atPath: pythonPath.path) else {
+            throw PythonBridgeError.pythonNotFound
+        }
 
         process?.executableURL = pythonPath
         process?.arguments = [mainPyPath.path]
@@ -515,44 +557,94 @@ class PythonBridgeService: ObservableObject {
 
         process?.standardInput = stdinPipe
         process?.standardOutput = stdoutPipe
+        process?.standardError = stderrPipe
 
-        // 監聽 stdout
+        // 監聽 stdout（處理 EOF）
         stdoutPipe?.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            if data.isEmpty {
+                // EOF：清理 handler
+                handle.readabilityHandler = nil
+                return
+            }
             self?.handleOutput(data)
         }
 
-        try process?.run()
+        // 監聽 stderr（用於調試）
+        stderrPipe?.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            if let text = String(data: data, encoding: .utf8) {
+                print("[Python stderr] \(text)")
+            }
+        }
+
+        do {
+            try process?.run()
+        } catch {
+            throw PythonBridgeError.processStartFailed(error.localizedDescription)
+        }
     }
 
     func stop() {
+        // 清理 handlers
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+
+        // 關閉 stdin（通知 Python 結束）
+        try? stdinPipe?.fileHandleForWriting.close()
+
         process?.terminate()
         process = nil
+        stdinPipe = nil
+        stdoutPipe = nil
+        stderrPipe = nil
+        outputBuffer = ""
     }
 
     func sendAudio(_ data: Data) {
-        stdinPipe?.fileHandleForWriting.write(data)
+        // 安全寫入（處理管道關閉情況）
+        do {
+            try stdinPipe?.fileHandleForWriting.write(contentsOf: data)
+        } catch {
+            print("[PythonBridge] Write error: \(error)")
+        }
     }
 
     private func handleOutput(_ data: Data) {
-        guard let line = String(data: data, encoding: .utf8) else { return }
+        guard let text = String(data: data, encoding: .utf8) else { return }
 
-        // JSON Lines 格式
-        for jsonLine in line.components(separatedBy: "\n") where !jsonLine.isEmpty {
+        // 處理緩衝邊界：stdout 可能在 JSON 行中間斷開
+        outputBuffer += text
+
+        // JSON Lines 格式：只處理完整的行
+        while let newlineIndex = outputBuffer.firstIndex(of: "\n") {
+            let jsonLine = String(outputBuffer[..<newlineIndex])
+            outputBuffer = String(outputBuffer[outputBuffer.index(after: newlineIndex)...])
+
+            guard !jsonLine.isEmpty else { continue }
             guard let jsonData = jsonLine.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   let type = json["type"] as? String else {
+                print("[PythonBridge] Failed to parse JSON: \(jsonLine)")
                 continue
             }
 
-            DispatchQueue.main.async { [weak self] in
+            // 回到主線程處理 UI 更新
+            Task { @MainActor [weak self] in
                 switch type {
                 case "subtitle":
                     if let original = json["original"] as? String,
                        let translation = json["translation"] as? String {
                         let entry = SubtitleEntry(original: original, translated: translation)
                         self?.onSubtitle?(entry)
+                    }
+                case "status":
+                    if let status = json["status"] as? String {
+                        self?.onStatusChange?(status)
                     }
                 case "error":
                     if let message = json["message"] as? String {
@@ -565,23 +657,100 @@ class PythonBridgeService: ObservableObject {
         }
     }
 
-    private func setupVenv() async throws {
-        // 建立 venv 並安裝依賴
-        let venvProcess = Process()
-        venvProcess.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        venvProcess.arguments = ["-m", "venv", venvPath.path]
-        try venvProcess.run()
-        venvProcess.waitUntilExit()
+    // MARK: - venv 設置
 
-        // pip install
-        let pipProcess = Process()
-        pipProcess.executableURL = venvPath.appendingPathComponent("bin/pip")
-        pipProcess.arguments = ["install", "-r", backendPath.appendingPathComponent("requirements.txt").path]
-        try pipProcess.run()
-        pipProcess.waitUntilExit()
+    private func setupVenv() async throws {
+        // 確保目錄存在
+        let appSupportDir = venvPath.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: appSupportDir,
+            withIntermediateDirectories: true
+        )
+
+        // 1. 建立 venv
+        let pythonPath = try findSystemPython()
+        try await runProcess(
+            executable: pythonPath,
+            arguments: ["-m", "venv", venvPath.path],
+            errorType: { PythonBridgeError.venvSetupFailed($0) }
+        )
+
+        // 2. 安裝依賴
+        let pipPath = venvPath.appendingPathComponent("bin/pip")
+        let requirementsPath = backendPath.appendingPathComponent("requirements.txt")
+        try await runProcess(
+            executable: pipPath,
+            arguments: ["install", "-r", requirementsPath.path],
+            errorType: { PythonBridgeError.dependencyInstallFailed($0) }
+        )
+    }
+
+    /// 查找系統 Python 3
+    private func findSystemPython() throws -> URL {
+        // 檢查常見路徑
+        let commonPaths = [
+            "/usr/bin/python3",           // macOS 預設
+            "/usr/local/bin/python3",     // Homebrew Intel
+            "/opt/homebrew/bin/python3"   // Homebrew Apple Silicon
+        ]
+
+        for path in commonPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                return URL(fileURLWithPath: path)
+            }
+        }
+
+        throw PythonBridgeError.pythonNotFound
+    }
+
+    /// 執行 Process 並等待完成（非阻塞）
+    private func runProcess(
+        executable: URL,
+        arguments: [String],
+        errorType: (String) -> PythonBridgeError
+    ) async throws {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+
+        // 捕獲 stderr 用於錯誤訊息
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
+
+        try process.run()
+
+        // 使用 continuation 包裝同步等待（避免阻塞主線程）
+        await withCheckedContinuation { continuation in
+            process.terminationHandler = { _ in
+                continuation.resume()
+            }
+        }
+
+        // 檢查執行結果
+        guard process.terminationStatus == 0 else {
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorOutput = String(decoding: errorData, as: UTF8.self)
+            throw errorType("exit code: \(process.terminationStatus)\n\(errorOutput)")
+        }
     }
 }
 ```
+
+**Phase 3 實作調整記錄**：
+
+| 項目 | 原規格 | 修正後 | 原因 |
+|------|--------|--------|------|
+| init() | 強制解包 `!` | `guard let` + `throws` | 避免崩潰風險 |
+| Application Support | `urls().first!` | 拋出式 `url(for:in:appropriateFor:create:)` | 更安全、自動建立目錄 |
+| readabilityHandler | 忽略 EOF | EOF 時清理 handler | 避免 handler 持續被呼叫 |
+| sendAudio | 直接 write | `try write(contentsOf:)` | Swift 5+ 需要錯誤處理 |
+| handleOutput | 直接分割字串 | 使用 outputBuffer 緩衝 | 處理跨 chunk 的 JSON 行 |
+| DispatchQueue.main | 使用 | `Task { @MainActor }` | 更符合 Swift 6 並發模型 |
+| setupVenv | `waitUntilExit()` 阻塞 | `terminationHandler` + continuation | 避免阻塞主線程 |
+| terminationStatus | 未檢查 | 檢查 == 0 | 確保 venv/pip 成功 |
+| Python 路徑 | 固定 `/usr/bin/python3` | 檢查常見路徑 | macOS 上位置可能變化 |
+| stderr | 未處理 | 捕獲並記錄 | 方便調試 |
+| 錯誤類型 | 無 | `PythonBridgeError` enum | 更好的錯誤處理 |
 
 ### 5.4 SubtitleOverlay.swift（字幕視圖）
 
