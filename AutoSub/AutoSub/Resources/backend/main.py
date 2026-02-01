@@ -39,7 +39,16 @@ def main():
     gemini_key = os.environ.get("GEMINI_API_KEY")
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
 
+    # 新增：Deepgram 斷句設定（有預設值）
+    endpointing_ms = int(os.environ.get("DEEPGRAM_ENDPOINTING_MS", "400"))
+    utterance_end_ms = int(os.environ.get("DEEPGRAM_UTTERANCE_END_MS", "1200"))
+
+    # 新增：Gemini Context 設定（有預設值）
+    max_history_pairs = int(os.environ.get("GEMINI_MAX_HISTORY_PAIRS", "20"))
+
     print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
+    print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}", file=sys.stderr, flush=True)
+    print(f"[Python] Gemini config: max_history_pairs={max_history_pairs}", file=sys.stderr, flush=True)
 
     if not deepgram_key or not gemini_key:
         output_json({
@@ -51,7 +60,10 @@ def main():
 
     # 初始化翻譯器
     print("[Python] Initializing translator...", file=sys.stderr, flush=True)
-    translator = Translator(api_key=gemini_key)
+    translator = Translator(
+        api_key=gemini_key,
+        max_history_pairs=max_history_pairs,
+    )
     print("[Python] Translator initialized", file=sys.stderr, flush=True)
 
     # 翻譯回呼（含重試）
@@ -86,7 +98,9 @@ def main():
         with Transcriber(
             api_key=deepgram_key,
             language=source_lang,
-            on_transcript=on_transcript
+            on_transcript=on_transcript,
+            endpointing_ms=endpointing_ms,
+            utterance_end_ms=utterance_end_ms,
         ) as transcriber:
             print("[Python] Transcriber connected!", file=sys.stderr, flush=True)
             output_json({"type": "status", "status": "connected"})

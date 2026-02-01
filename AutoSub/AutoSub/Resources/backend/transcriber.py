@@ -28,7 +28,8 @@ class Transcriber:
         api_key: str,
         language: str = "ja",
         on_transcript: Optional[Callable[[str], None]] = None,
-        endpointing_ms: int = 300,
+        endpointing_ms: int = 400,
+        utterance_end_ms: int = 1200,
     ):
         """
         初始化轉錄器
@@ -37,12 +38,14 @@ class Transcriber:
             api_key: Deepgram API Key
             language: 語言代碼 (預設 "ja" 日語)
             on_transcript: 轉錄完成回呼
-            endpointing_ms: 靜音判定時間 (毫秒)
+            endpointing_ms: 靜音判定時間 (毫秒)，預設 400ms（日語句子較長）
+            utterance_end_ms: utterance 超時時間 (毫秒)，預設 1200ms
         """
         self.api_key = api_key
         self.language = language
         self.on_transcript = on_transcript
         self.endpointing_ms = endpointing_ms
+        self.utterance_end_ms = utterance_end_ms
 
         self._client: Optional[DeepgramClient] = None
         self._context_manager = None
@@ -50,6 +53,7 @@ class Transcriber:
         self._listener_thread: Optional[threading.Thread] = None
         self._running = False
         self._start_time: float = 0
+        self._utterance_buffer: list[str] = []  # 累積 buffer
 
     def start(self) -> None:
         """啟動 Deepgram 連線"""
@@ -70,6 +74,8 @@ class Transcriber:
             smart_format=True,
             interim_results=True,
             endpointing=self.endpointing_ms,
+            utterance_end_ms=self.utterance_end_ms,
+            vad_events=True,
             encoding="linear16",
             sample_rate=24000,
             channels=2,
@@ -93,6 +99,7 @@ class Transcriber:
         # 註冊事件處理
         self._connection.on(EventType.MESSAGE, self._on_message)
         self._connection.on(EventType.ERROR, self._on_error)
+        self._connection.on(EventType.UTTERANCE_END, self._on_utterance_end)
 
         # 在背景線程中運行監聽
         def listen_loop():
@@ -138,17 +145,44 @@ class Transcriber:
                 if alternatives:
                     transcript = getattr(alternatives[0], "transcript", "")
                     is_final = getattr(message, "is_final", False)
-                    # 只有在有 transcript 內容時才輸出
+                    speech_final = getattr(message, "speech_final", False)
+
+                    # 只有在有 transcript 內容時才處理
                     if transcript.strip():
-                        print(f"[Transcriber] transcript='{transcript}', is_final={is_final}", file=sys.stderr, flush=True)
+                        print(f"[Transcriber] transcript='{transcript}', is_final={is_final}, speech_final={speech_final}", file=sys.stderr, flush=True)
+
                         if is_final:
-                            print(f"[Transcriber] FINAL - Sending to callback: {transcript}", file=sys.stderr, flush=True)
-                            if self.on_transcript:
-                                self.on_transcript(transcript)
+                            # 累積到 buffer
+                            self._utterance_buffer.append(transcript)
+                            print(f"[Transcriber] Added to buffer (total: {len(self._utterance_buffer)})", file=sys.stderr, flush=True)
+
+                        # speech_final=True 表示說話者停頓，flush buffer
+                        if speech_final and self._utterance_buffer:
+                            print(f"[Transcriber] speech_final triggered flush", file=sys.stderr, flush=True)
+                            self._flush_buffer()
                 else:
                     print(f"[Transcriber] No alternatives in channel", file=sys.stderr, flush=True)
             else:
                 print(f"[Transcriber] No channel in message", file=sys.stderr, flush=True)
+
+    def _on_utterance_end(self, event) -> None:
+        """UtteranceEnd 事件：基於 utterance_end_ms 的超時觸發"""
+        print(f"[Transcriber] UtteranceEnd event received", file=sys.stderr, flush=True)
+        if self._utterance_buffer:
+            print(f"[Transcriber] UtteranceEnd triggered flush", file=sys.stderr, flush=True)
+            self._flush_buffer()
+
+    def _flush_buffer(self) -> None:
+        """輸出累積的 buffer 並清空"""
+        if not self._utterance_buffer:
+            return
+
+        full_transcript = "".join(self._utterance_buffer)
+        self._utterance_buffer.clear()
+
+        print(f"[Transcriber] FLUSH - Sending to callback: {full_transcript}", file=sys.stderr, flush=True)
+        if self.on_transcript and full_transcript.strip():
+            self.on_transcript(full_transcript)
 
     def _on_error(self, error) -> None:
         """處理錯誤"""
