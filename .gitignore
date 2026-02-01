@@ -16,9 +16,9 @@ AutoSub/AutoSub/Resources/backend/.venv/
 poc/systemAudioDump/.build/
 
 # Xcode
-*.xcodeproj/project.xcworkspace/
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/
+**/*.xcodeproj/xcuserdata/
+**/*.xcworkspace/xcuserdata/
 DerivedData/
 *.moved-aside
 *.ipa
