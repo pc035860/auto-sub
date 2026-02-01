@@ -56,16 +56,10 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
 
-    // 目標格式
+    // 目標格式（聲道數會從源取得）
     private let targetSampleRate: Double = 24_000
-    private let targetChannels: AVAudioChannelCount = 2
 
-    // P1: 緩存 buffer（減少 GC 壓力）
-    private var cachedInputBuffer: AVAudioPCMBuffer?
-    private var cachedOutputBuffer: AVAudioPCMBuffer?
-    private var lastInputFrameCapacity: AVAudioFrameCount = 0
-
-    // P3: 轉換器初始化失敗標記
+    // 轉換器初始化失敗標記
     private var converterInitFailed: Bool = false
     private var hasReportedInitFailure: Bool = false
 
@@ -118,28 +112,25 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
                 guard let converter = converter,
                       let outFmt = outputFormat else { return }
 
-                let requiredFrameCapacity = AVAudioFrameCount(sampleBuffer.numSamples)
+                // 建立 source buffer（每次新建，與 POC 一致）
+                let srcFmt = converter.inputFormat
+                guard let srcBuffer = AVAudioPCMBuffer(
+                    pcmFormat: srcFmt,
+                    frameCapacity: AVAudioFrameCount(sampleBuffer.numSamples)
+                ) else { return }
+                srcBuffer.frameLength = srcBuffer.frameCapacity
 
-                // P1: 取得或建立 input buffer（重用緩存）
-                let srcBuffer = getOrCreateInputBuffer(
-                    format: converter.inputFormat,
-                    frameCapacity: requiredFrameCapacity
-                )
-                guard let srcBuffer = srcBuffer else { return }
-                srcBuffer.frameLength = requiredFrameCapacity
-
-                // P2: 使用提取的方法複製音訊資料
+                // 複製音訊資料
                 copyAudioData(from: abl, to: srcBuffer)
 
-                // P1: 計算並取得 output buffer（重用緩存）
+                // 建立 output buffer（每次新建，與 POC 一致）
                 let outputFrameCapacity = AVAudioFrameCount(
-                    ceil(Double(srcBuffer.frameLength) * outFmt.sampleRate / converter.inputFormat.sampleRate)
+                    ceil(Double(srcBuffer.frameLength) * outFmt.sampleRate / srcFmt.sampleRate)
                 )
-                let outBuffer = getOrCreateOutputBuffer(
-                    format: outFmt,
+                guard let outBuffer = AVAudioPCMBuffer(
+                    pcmFormat: outFmt,
                     frameCapacity: outputFrameCapacity
-                )
-                guard let outBuffer = outBuffer else { return }
+                ) else { return }
 
                 // 執行轉換
                 var error: NSError?
@@ -181,61 +172,7 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         onError?(AudioCaptureError.streamFailed(error))
     }
 
-    // MARK: - Private Methods: Buffer Management (P1)
-
-    /// 取得或建立 input buffer（重用緩存減少記憶體分配）
-    private func getOrCreateInputBuffer(
-        format: AVAudioFormat,
-        frameCapacity: AVAudioFrameCount
-    ) -> AVAudioPCMBuffer? {
-        // 如果緩存存在且容量足夠，直接重用
-        if let cached = cachedInputBuffer,
-           cached.frameCapacity >= frameCapacity {
-            return cached
-        }
-
-        // 需要新建或擴容（預留 20% 空間避免頻繁重新分配）
-        let expandedCapacity = AVAudioFrameCount(Double(frameCapacity) * 1.2)
-        guard let newBuffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: expandedCapacity
-        ) else {
-            print("[AudioStreamOutput] Failed to create input buffer")
-            return nil
-        }
-
-        cachedInputBuffer = newBuffer
-        lastInputFrameCapacity = expandedCapacity
-        return newBuffer
-    }
-
-    /// 取得或建立 output buffer（重用緩存減少記憶體分配）
-    private func getOrCreateOutputBuffer(
-        format: AVAudioFormat,
-        frameCapacity: AVAudioFrameCount
-    ) -> AVAudioPCMBuffer? {
-        // 如果緩存存在且容量足夠，直接重用
-        if let cached = cachedOutputBuffer,
-           cached.frameCapacity >= frameCapacity {
-            cached.frameLength = 0  // 重置 frameLength
-            return cached
-        }
-
-        // 需要新建或擴容
-        let expandedCapacity = AVAudioFrameCount(Double(frameCapacity) * 1.2)
-        guard let newBuffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: expandedCapacity
-        ) else {
-            print("[AudioStreamOutput] Failed to create output buffer")
-            return nil
-        }
-
-        cachedOutputBuffer = newBuffer
-        return newBuffer
-    }
-
-    // MARK: - Private Methods: Audio Processing (P2)
+    // MARK: - Private Methods: Audio Processing
 
     /// 複製音訊資料從 AudioBufferList 到 AVAudioPCMBuffer
     private func copyAudioData(
@@ -278,10 +215,11 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         }
 
         // 目標格式：24kHz, Int16, 交錯（Deepgram 需要）
+        // 使用源的聲道數（與 POC 一致）
         guard let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: targetSampleRate,
-            channels: targetChannels,
+            channels: desc.mChannelsPerFrame,  // 使用源的聲道數
             interleaved: true
         ) else {
             print("[AudioStreamOutput] Failed to create target format")
@@ -299,7 +237,7 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         outputFormat = targetFormat
         converter = newConverter
 
-        print("[AudioStreamOutput] Converter initialized: \(srcFormat.sampleRate)Hz → \(targetSampleRate)Hz")
+        print("[AudioStreamOutput] Converter initialized: \(srcFormat.sampleRate)Hz/\(desc.mChannelsPerFrame)ch → \(targetSampleRate)Hz/\(desc.mChannelsPerFrame)ch")
     }
 
     /// 報告初始化失敗（只報告一次）
@@ -335,9 +273,8 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
 class AudioCaptureService: NSObject, ObservableObject {
     // MARK: - Properties
 
-    /// 音訊格式：24kHz, 16-bit, Stereo
+    /// 音訊格式：24kHz, 16-bit（聲道數由系統決定）
     let sampleRate: Double = 24_000
-    let channels: Int = 2
     let bytesPerSample: Int = 2
 
     /// 是否正在擷取

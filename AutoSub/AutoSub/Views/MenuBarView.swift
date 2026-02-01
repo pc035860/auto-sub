@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack {
@@ -32,6 +33,13 @@ struct MenuBarView: View {
                 )
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
+
+            // 開發測試（之後可移除）
+            Button {
+                openWindow(id: "audio-test")
+            } label: {
+                Label("Audio Test", systemImage: "waveform")
+            }
 
             Divider()
 
