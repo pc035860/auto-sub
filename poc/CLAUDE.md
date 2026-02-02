@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 流程：系統音訊（日語）→ Deepgram STT → Gemini 翻譯 → 終端機顯示
 
+**project_name**: `auto-sub`
+
 ## 開發指令
 
 ```bash
