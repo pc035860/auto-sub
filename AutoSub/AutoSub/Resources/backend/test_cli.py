@@ -37,7 +37,7 @@ class TestCLI:
 
         self.translator = Translator(
             api_key=self.gemini_key,
-            max_history_pairs=20,
+            max_context_tokens=100_000,
         )
         self.running = False
         self.count = 0
@@ -75,7 +75,7 @@ class TestCLI:
         print("翻譯斷句改進測試")
         print("=" * 50)
         print(f"endpointing_ms: 400, utterance_end_ms: 1200")
-        print(f"Gemini Context: 啟用 (max_history_pairs=20)")
+        print(f"Gemini Context: 啟用 (max_context_tokens=100K, 隱式快取)")
         print("等待系統音訊... (按 Ctrl+C 停止)")
         print()
 

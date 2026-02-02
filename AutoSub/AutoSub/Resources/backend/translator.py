@@ -1,7 +1,7 @@
 """
 Gemini 翻譯模組
 使用 Google GenAI SDK 1.61.0
-採用 Chat Session 保持翻譯上下文一致性
+採用 Chat Session 保持翻譯上下文一致性，最大化隱式快取效益
 """
 
 import sys
@@ -20,15 +20,27 @@ SYSTEM_INSTRUCTION = """你是專業的日文即時字幕翻譯員。請將日�
 
 注意：這是即時字幕翻譯，請參考之前的對話歷史保持翻譯一致性。"""
 
+SUMMARIZE_PROMPT = """請根據以上翻譯歷史，整理：
+1. 人名/專有名詞對照清單（格式：日文 → 中文，每行一個）
+2. 這個對話的主題或背景（一句話）
+
+只輸出整理結果，不要其他說明。"""
+
+CONTEXT_HANDOVER_TEMPLATE = """延續之前的翻譯工作。以下是已確定的翻譯對照和背景：
+
+{summary}
+
+請繼續保持翻譯一致性。"""
+
 
 class Translator:
-    """Gemini 翻譯器（使用 Chat Session 保持上下文）"""
+    """Gemini 翻譯器（使用 Chat Session 保持上下文，最大化隱式快取效益）"""
 
     def __init__(
         self,
         api_key: str,
         model: str = "gemini-2.5-flash-lite",
-        max_history_pairs: int = 20,
+        max_context_tokens: int = 100_000,
     ):
         """
         初始化翻譯器
@@ -36,11 +48,11 @@ class Translator:
         Args:
             api_key: Gemini API Key
             model: 模型名稱 (預設 gemini-2.5-flash-lite)
-            max_history_pairs: 保留的最大對話對數 (預設 20)
+            max_context_tokens: 最大 context tokens 閾值 (預設 100K)
         """
         self.client = genai.Client(api_key=api_key)
         self.model = model
-        self.max_history_pairs = max_history_pairs
+        self.max_context_tokens = max_context_tokens
 
         self._config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
@@ -50,7 +62,8 @@ class Translator:
             model=self.model,
             config=self._config,
         )
-        self._turn_count = 0
+        self._total_tokens = 0
+        self._context_summary: str = ""  # 上一個 session 的摘要
 
     def translate(self, text: str) -> str:
         """
@@ -67,11 +80,28 @@ class Translator:
 
         try:
             response = self._chat.send_message(f"翻譯：{text}")
-            self._turn_count += 1
 
-            # 檢查是否需要壓縮歷史
-            if self._turn_count > self.max_history_pairs * 2:
-                self._compact_history()
+            # 追蹤 token 使用量
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                usage = response.usage_metadata
+                total = getattr(usage, 'total_token_count', None)
+                input_tokens = getattr(usage, 'prompt_token_count', None)
+                output_tokens = getattr(usage, 'candidates_token_count', None)
+
+                if total is not None:
+                    self._total_tokens = total
+
+                # Debug log: 每次翻譯的 token 統計
+                print(f"[Translator] Tokens - total: {self._total_tokens}, "
+                      f"input: {input_tokens}, output: {output_tokens}, "
+                      f"limit: {self.max_context_tokens}",
+                      file=sys.stderr, flush=True)
+
+            # 超過閾值就摘要並重建 session
+            if self._total_tokens > self.max_context_tokens:
+                print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing and rebuilding...",
+                      file=sys.stderr, flush=True)
+                self._summarize_and_rebuild()
 
             return response.text.strip()
 
@@ -80,33 +110,55 @@ class Translator:
             self._rebuild_session()
             return self._fallback_translate(text)
 
-    def _compact_history(self) -> None:
-        """壓縮歷史：保留最近的對話"""
+    def _summarize_and_rebuild(self) -> None:
+        """萃取摘要後重建 session，保持翻譯一致性"""
+        print(f"[Translator] === Starting context rebuild (tokens: {self._total_tokens}) ===",
+              file=sys.stderr, flush=True)
+
+        # Step 1: 請求摘要（用即將被丟棄的 session）
+        print("[Translator] Step 1: Requesting summary from current session...",
+              file=sys.stderr, flush=True)
         try:
-            recent_history = self._chat.get_history(curated=True)
-            keep_turns = self.max_history_pairs * 2
-            if len(recent_history) > keep_turns:
-                recent_history = recent_history[-keep_turns:]
-
-            self._chat = self.client.chats.create(
-                model=self.model,
-                config=self._config,
-                history=recent_history,
-            )
-            self._turn_count = len(recent_history) // 2
-            print(f"[Translator] History compacted to {self._turn_count} pairs", file=sys.stderr, flush=True)
+            summary_response = self._chat.send_message(SUMMARIZE_PROMPT)
+            self._context_summary = summary_response.text.strip()
+            print(f"[Translator] Summary received ({len(self._context_summary)} chars):\n"
+                  f"---\n{self._context_summary}\n---", file=sys.stderr, flush=True)
         except Exception as e:
-            print(f"[Translator] Compact failed: {e}, rebuilding...", file=sys.stderr, flush=True)
-            self._rebuild_session()
+            print(f"[Translator] Summarization failed: {e}", file=sys.stderr, flush=True)
+            self._context_summary = ""
 
-    def _rebuild_session(self) -> None:
-        """錯誤恢復：重建空的 session"""
+        # Step 2: 重建 session
+        print("[Translator] Step 2: Creating new session...", file=sys.stderr, flush=True)
         self._chat = self.client.chats.create(
             model=self.model,
             config=self._config,
         )
-        self._turn_count = 0
-        print("[Translator] Session rebuilt", file=sys.stderr, flush=True)
+        self._total_tokens = 0
+        print("[Translator] New session created, tokens reset to 0", file=sys.stderr, flush=True)
+
+        # Step 3: 帶入摘要作為上下文
+        if self._context_summary:
+            print("[Translator] Step 3: Handing over context to new session...",
+                  file=sys.stderr, flush=True)
+            handover_msg = CONTEXT_HANDOVER_TEMPLATE.format(summary=self._context_summary)
+            try:
+                self._chat.send_message(handover_msg)
+                print("[Translator] Context handover successful", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"[Translator] Handover failed: {e}", file=sys.stderr, flush=True)
+        else:
+            print("[Translator] Step 3: Skipped (no summary available)", file=sys.stderr, flush=True)
+
+        print("[Translator] === Context rebuild complete ===", file=sys.stderr, flush=True)
+
+    def _rebuild_session(self) -> None:
+        """重建空的 session（無摘要，用於錯誤恢復）"""
+        self._chat = self.client.chats.create(
+            model=self.model,
+            config=self._config,
+        )
+        self._total_tokens = 0
+        print("[Translator] Session rebuilt (no context)", file=sys.stderr, flush=True)
 
     def _fallback_translate(self, text: str) -> str:
         """降級翻譯：不使用 history"""
@@ -122,5 +174,5 @@ class Translator:
             return ""
 
     def reset_context(self) -> None:
-        """重置對話上下文"""
+        """重置對話上下文（切換影片時呼叫）"""
         self._rebuild_session()
