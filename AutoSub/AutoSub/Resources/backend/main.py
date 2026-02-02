@@ -67,8 +67,18 @@ def main():
     print("[Python] Translator initialized", file=sys.stderr, flush=True)
 
     # 翻譯回呼（含重試）
-    def on_transcript(text: str):
-        print(f"[Python] on_transcript called with: {text}", file=sys.stderr, flush=True)
+    def on_transcript(transcript_id: str, text: str):
+        print(f"[Python] on_transcript called with id={transcript_id}, text={text}", file=sys.stderr, flush=True)
+
+        # 1. 立即送出原文（翻譯中狀態）
+        output_json({
+            "type": "transcript",
+            "id": transcript_id,
+            "text": text
+        })
+        print(f"[Python] Transcript sent to stdout!", file=sys.stderr, flush=True)
+
+        # 2. 進行翻譯
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -76,8 +86,10 @@ def main():
                 translated = translator.translate(text)
                 print(f"[Python] Translation result: {translated}", file=sys.stderr, flush=True)
                 if translated:
+                    # 3. 送出翻譯結果
                     output_json({
                         "type": "subtitle",
+                        "id": transcript_id,
                         "original": text,
                         "translation": translated
                     })

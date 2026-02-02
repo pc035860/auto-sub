@@ -39,11 +39,11 @@ struct APISettingsView: View {
             Section {
                 SecureField("Deepgram API Key", text: $appState.deepgramApiKey)
                     .onChangeCompat(of: appState.deepgramApiKey) {
-                        saveConfiguration()
+                        appState.saveConfiguration()
                     }
                 SecureField("Gemini API Key", text: $appState.geminiApiKey)
                     .onChangeCompat(of: appState.geminiApiKey) {
-                        saveConfiguration()
+                        appState.saveConfiguration()
                     }
             } header: {
                 Text("API Keys")
@@ -60,7 +60,7 @@ struct APISettingsView: View {
                     Text("韓文").tag("ko")
                 }
                 .onChangeCompat(of: appState.sourceLanguage) {
-                    saveConfiguration()
+                    appState.saveConfiguration()
                 }
 
                 Picker("翻譯語言", selection: $appState.targetLanguage) {
@@ -69,7 +69,7 @@ struct APISettingsView: View {
                     Text("英文").tag("en")
                 }
                 .onChangeCompat(of: appState.targetLanguage) {
-                    saveConfiguration()
+                    appState.saveConfiguration()
                 }
             } header: {
                 Text("語言設定")
@@ -78,40 +78,10 @@ struct APISettingsView: View {
         .formStyle(.grouped)
         .padding()
     }
-
-    private func saveConfiguration() {
-        let config = Configuration(
-            deepgramApiKey: appState.deepgramApiKey,
-            geminiApiKey: appState.geminiApiKey,
-            sourceLanguage: appState.sourceLanguage,
-            targetLanguage: appState.targetLanguage,
-            subtitleFontSize: appState.subtitleFontSize,
-            subtitleDisplayDuration: appState.subtitleDisplayDuration,
-            showOriginalText: appState.showOriginalText
-        )
-        try? ConfigurationService.shared.saveConfiguration(config)
-    }
-}
-
-// MARK: - onChange Compatibility Extension
-
-extension View {
-    /// macOS 13/14 相容的 onChange
-    @ViewBuilder
-    func onChangeCompat<V: Equatable>(of value: V, perform action: @escaping () -> Void) -> some View {
-        if #available(macOS 14.0, *) {
-            self.onChange(of: value) { _, _ in
-                action()
-            }
-        } else {
-            self.onChange(of: value) { _ in
-                action()
-            }
-        }
-    }
 }
 
 // MARK: - 字幕設定
+// 注意：onChangeCompat 擴展已移至 SubtitleOverlay.swift
 
 struct SubtitleSettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -127,12 +97,12 @@ struct SubtitleSettingsView: View {
                     Text("48")
                 }
                 .onChangeCompat(of: appState.subtitleFontSize) {
-                    saveConfiguration()
+                    appState.saveConfiguration()
                 }
 
                 Toggle("顯示原文", isOn: $appState.showOriginalText)
                     .onChangeCompat(of: appState.showOriginalText) {
-                        saveConfiguration()
+                        appState.saveConfiguration()
                     }
             } header: {
                 Text("顯示設定")
@@ -147,7 +117,7 @@ struct SubtitleSettingsView: View {
                     Text("10s")
                 }
                 .onChangeCompat(of: appState.subtitleDisplayDuration) {
-                    saveConfiguration()
+                    appState.saveConfiguration()
                 }
             } header: {
                 Text("時間設定")
@@ -155,18 +125,5 @@ struct SubtitleSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-    }
-
-    private func saveConfiguration() {
-        let config = Configuration(
-            deepgramApiKey: appState.deepgramApiKey,
-            geminiApiKey: appState.geminiApiKey,
-            sourceLanguage: appState.sourceLanguage,
-            targetLanguage: appState.targetLanguage,
-            subtitleFontSize: appState.subtitleFontSize,
-            subtitleDisplayDuration: appState.subtitleDisplayDuration,
-            showOriginalText: appState.showOriginalText
-        )
-        try? ConfigurationService.shared.saveConfiguration(config)
     }
 }

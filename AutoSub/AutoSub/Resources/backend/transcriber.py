@@ -7,6 +7,7 @@ Deepgram 即時語音轉文字模組
 import sys
 import threading
 import time
+import uuid
 from typing import Callable, Optional
 
 from deepgram import DeepgramClient
@@ -27,7 +28,7 @@ class Transcriber:
         self,
         api_key: str,
         language: str = "ja",
-        on_transcript: Optional[Callable[[str], None]] = None,
+        on_transcript: Optional[Callable[[str, str], None]] = None,
         endpointing_ms: int = 400,
         utterance_end_ms: int = 1200,
     ):
@@ -37,7 +38,7 @@ class Transcriber:
         Args:
             api_key: Deepgram API Key
             language: 語言代碼 (預設 "ja" 日語)
-            on_transcript: 轉錄完成回呼
+            on_transcript: 轉錄完成回呼 (id: str, text: str) -> None
             endpointing_ms: 靜音判定時間 (毫秒)，預設 400ms（日語句子較長）
             utterance_end_ms: utterance 超時時間 (毫秒)，預設 1200ms
         """
@@ -190,7 +191,9 @@ class Transcriber:
 
         print(f"[Transcriber] FLUSH - Sending to callback: {full_transcript}", file=sys.stderr, flush=True)
         if self.on_transcript and full_transcript.strip():
-            self.on_transcript(full_transcript)
+            # 生成 UUID 並傳給回呼
+            transcript_id = str(uuid.uuid4())
+            self.on_transcript(transcript_id, full_transcript)
 
     def _on_error(self, error) -> None:
         """處理錯誤"""

@@ -88,7 +88,10 @@ class PythonBridgeService: ObservableObject {
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
 
-    /// 字幕回呼
+    /// 收到原文時的回呼（id, text）- 用於顯示「翻譯中」狀態
+    var onTranscript: ((UUID, String) -> Void)?
+
+    /// 字幕回呼（翻譯完成）
     var onSubtitle: ((SubtitleEntry) -> Void)?
 
     /// 錯誤回呼
@@ -284,23 +287,42 @@ class PythonBridgeService: ObservableObject {
             guard let self = self else { return }
 
             switch type {
+            case "transcript":
+                // 新增：處理原文（翻譯中狀態）
+                if let idString = json["id"] as? String,
+                   let id = UUID(uuidString: idString),
+                   let text = json["text"] as? String {
+                    print("[PythonBridge] Transcript received - id: \(idString), text: \(text)")
+                    self.onTranscript?(id, text)
+                }
+
             case "subtitle":
-                if let original = json["original"] as? String,
+                // 修改：包含 id，用於更新對應的 transcript
+                if let idString = json["id"] as? String,
+                   let id = UUID(uuidString: idString),
+                   let original = json["original"] as? String,
                    let translation = json["translation"] as? String {
-                    print("[PythonBridge] Subtitle received - original: \(original), translation: \(translation)")
-                    let entry = SubtitleEntry(original: original, translated: translation)
+                    print("[PythonBridge] Subtitle received - id: \(idString), original: \(original), translation: \(translation)")
+                    let entry = SubtitleEntry(
+                        id: id,
+                        originalText: original,
+                        translatedText: translation
+                    )
                     print("[PythonBridge] Calling onSubtitle callback...")
                     self.onSubtitle?(entry)
                     print("[PythonBridge] onSubtitle callback done")
                 }
+
             case "status":
                 if let status = json["status"] as? String {
                     self.onStatusChange?(status)
                 }
+
             case "error":
                 if let message = json["message"] as? String {
                     self.onError?(message)
                 }
+
             default:
                 print("[PythonBridge] Unknown message type: \(type)")
             }

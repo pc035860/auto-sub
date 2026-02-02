@@ -540,6 +540,8 @@ extension Notification.Name {
 }
 
 // MARK: - macOS 相容性擴展
+// 注意：此擴展統一定義在 SubtitleOverlay.swift
+// 若 SettingsView.swift 已有相同定義，請移除以避免重複
 
 extension View {
     /// macOS 13/14 相容的 onChange

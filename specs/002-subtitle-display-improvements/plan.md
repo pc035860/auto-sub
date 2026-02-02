@@ -76,9 +76,9 @@
 **檔案**：`AutoSub/AutoSub/Models/SubtitleEntry.swift`
 
 變更：
-- [ ] `translatedText` 改為 `String?`（Optional）
-- [ ] 新增 `isTranslating` 計算屬性
-- [ ] 新增兩個 initializer（transcript 用、subtitle 用）
+- [x] `translatedText` 改為 `String?`（Optional）
+- [x] 新增 `isTranslating` 計算屬性
+- [x] 新增兩個 initializer（transcript 用、subtitle 用）
 
 程式碼參考：SPEC.md Section 2.1
 
@@ -87,18 +87,18 @@
 **檔案**：`AutoSub/AutoSub/Models/AppState.swift`
 
 新增屬性：
-- [ ] `subtitleHistory: [SubtitleEntry]` - 最多 3 筆
-- [ ] `isSubtitleLocked: Bool` - 預設 true
-- [ ] `subtitlePositionX: CGFloat?`
-- [ ] `subtitlePositionY: CGFloat?`
-- [ ] `maxHistoryCount = 3` 常數
+- [x] `subtitleHistory: [SubtitleEntry]` - 最多 3 筆
+- [x] `isSubtitleLocked: Bool` - 預設 true
+- [x] `subtitlePositionX: CGFloat?`
+- [x] `subtitlePositionY: CGFloat?`
+- [x] `maxHistoryCount = 3` 常數
 
 新增方法：
-- [ ] `addTranscript(id:text:)` - 新增原文條目
-- [ ] `updateTranslation(id:translation:)` - 更新翻譯
-- [ ] `loadSubtitlePosition()` - 從 UserDefaults 載入
-- [ ] `saveSubtitlePosition()` - 儲存到 UserDefaults
-- [ ] `resetSubtitlePosition()` - 重設位置
+- [x] `addTranscript(id:text:)` - 新增原文條目
+- [x] `updateTranslation(id:translation:)` - 更新翻譯
+- [x] `loadSubtitlePosition()` - 從 UserDefaults 載入
+- [x] `saveSubtitlePosition()` - 儲存到 UserDefaults
+- [x] `resetSubtitlePosition()` - 重設位置
 
 程式碼參考：SPEC.md Section 2.2
 
@@ -109,17 +109,17 @@
 **檔案**：`AutoSub/AutoSub/Resources/backend/transcriber.py`
 
 變更（先改這個）：
-- [ ] `import uuid`
-- [ ] 回呼簽名改為 `Callable[[str, str], None]`（id, text）
-- [ ] `_flush_buffer()` 內生成 UUID：`transcript_id = str(uuid.uuid4())`
-- [ ] 呼叫回呼時傳入 id：`self.on_transcript(transcript_id, full_transcript)`
+- [x] `import uuid`
+- [x] 回呼簽名改為 `Callable[[str, str], None]`（id, text）
+- [x] `_flush_buffer()` 內生成 UUID：`transcript_id = str(uuid.uuid4())`
+- [x] 呼叫回呼時傳入 id：`self.on_transcript(transcript_id, full_transcript)`
 
 **檔案**：`AutoSub/AutoSub/Resources/backend/main.py`
 
 變更（配合上面的修改）：
-- [ ] 修改 `on_transcript` 回呼簽名為 `(id: str, text: str)`
-- [ ] 先送 `transcript` 訊息（含 id）
-- [ ] 翻譯完成後送 `subtitle` 訊息（含相同 id）
+- [x] 修改 `on_transcript` 回呼簽名為 `(id: str, text: str)`
+- [x] 先送 `transcript` 訊息（含 id）
+- [x] 翻譯完成後送 `subtitle` 訊息（含相同 id）
 
 **資料流**：
 ```
@@ -139,9 +139,9 @@ transcriber._flush_buffer()
 **檔案**：`AutoSub/AutoSub/Services/PythonBridgeService.swift`
 
 變更：
-- [ ] 新增 `onTranscript: ((UUID, String) -> Void)?` 回呼
-- [ ] `parseAndDispatch` 新增 `"transcript"` case
-- [ ] 修改 `"subtitle"` case 解析 `id` 欄位
+- [x] 新增 `onTranscript: ((UUID, String) -> Void)?` 回呼
+- [x] `parseAndDispatch` 新增 `"transcript"` case
+- [x] 修改 `"subtitle"` case 解析 `id` 欄位
 
 程式碼參考：SPEC.md Section 5.1
 
@@ -150,8 +150,8 @@ transcriber._flush_buffer()
 **檔案**：`AutoSub/AutoSub/Views/MenuBarView.swift`
 
 變更：
-- [ ] 新增 `bridge.onTranscript` 回呼設定
-- [ ] 修改 `bridge.onSubtitle` 呼叫 `updateTranslation`
+- [x] 新增 `bridge.onTranscript` 回呼設定
+- [x] 修改 `bridge.onSubtitle` 呼叫 `updateTranslation`
 
 程式碼參考：SPEC.md Section 5.2
 
@@ -162,19 +162,19 @@ transcriber._flush_buffer()
 **檔案**：`AutoSub/AutoSub/Views/SubtitleOverlay.swift`
 
 新功能：
-- [ ] 歷史字幕顯示（ForEach `subtitleHistory`）
-- [ ] 透明度遞減（最新 100%、次新 60%、最舊 30%）
-- [ ] 「翻譯中...」狀態顯示（灰色斜體）
-- [ ] 動態尺寸（maxWidth 80%、maxHeight 20%）
-- [ ] 捲軸支援（ScrollView + ScrollViewReader）
-- [ ] 新字幕自動捲到底部
-- [ ] 拖曳把手 UI（解鎖時顯示）
-- [ ] `SubtitleRow` 子元件
-- [ ] `DragHandle` 子元件
-- [ ] `onChangeCompat` 相容性擴展
-- [ ] `Notification.Name.subtitleLockStateChanged` 定義
+- [x] 歷史字幕顯示（ForEach `subtitleHistory`）
+- [x] 透明度遞減（最新 100%、次新 60%、最舊 30%）
+- [x] 「翻譯中...」狀態顯示（灰色斜體）
+- [x] 動態尺寸（maxWidth 80%、maxHeight 20%）
+- [x] 捲軸支援（ScrollView + ScrollViewReader）
+- [x] 新字幕自動捲到底部
+- [x] 拖曳把手 UI（解鎖時顯示）
+- [x] `SubtitleRow` 子元件
+- [x] `DragHandle` 子元件
+- [x] `onChangeCompat` 相容性擴展
+- [x] `Notification.Name.subtitleLockStateChanged` 定義
 
-**捲軸智慧捲動邏輯**（PRD 補充需求）：
+**捲軸智慧捲動邏輯**（PRD 補充需求 - 延後至 Session 2）：
 - [ ] 新增 `@State private var isUserScrolling: Bool = false`
 - [ ] 用戶手動捲動時，設 `isUserScrolling = true`（暫停自動捲動）
 - [ ] 用戶捲到底部時，設 `isUserScrolling = false`（恢復自動捲動）
