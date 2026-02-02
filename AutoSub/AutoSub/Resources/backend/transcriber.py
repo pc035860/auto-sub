@@ -70,7 +70,7 @@ class Transcriber:
         # 建立 WebSocket 連線
         print("[Transcriber] Connecting to Deepgram...", file=sys.stderr, flush=True)
         self._context_manager = self._client.listen.v1.connect(
-            model="nova-2",
+            model="nova-3",
             language=self.language,
             smart_format=True,
             interim_results=True,

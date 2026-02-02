@@ -126,7 +126,7 @@ SubtitleOverlay (NSWindow)
 ## 技術細節
 
 ### Deepgram（transcriber.py）
-- 模型：`nova-2`，語言：`ja`
+- 模型：`nova-3`，語言：`ja`
 - endpointing：400ms，utterance_end：1200ms
 - 分段邏輯：is_final buffer + speech_final 觸發 + 超過 80 字強制 flush + UtteranceEnd 觸發
 
