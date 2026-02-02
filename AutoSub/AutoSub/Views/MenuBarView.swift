@@ -163,6 +163,12 @@ struct MenuBarView: View {
                     state?.updateTranslation(id: subtitle.id, translation: subtitle.translatedText ?? "")
                 }
             }
+            // 新增：interim 回呼（正在說的話）
+            bridge.onInterim = { [weak state] text in
+                Task { @MainActor in
+                    state?.updateInterim(text)
+                }
+            }
             bridge.onStatusChange = { status in
                 print("[MenuBarView] Python status: \(status)")
             }
@@ -193,11 +199,13 @@ struct MenuBarView: View {
             audioService.onError = nil
             bridge.onTranscript = nil
             bridge.onSubtitle = nil
+            bridge.onInterim = nil
             bridge.onError = nil
             bridge.onStatusChange = nil
 
             state.status = .error
             state.errorMessage = error.localizedDescription
+            state.currentInterim = nil
         }
     }
 
@@ -213,6 +221,7 @@ struct MenuBarView: View {
         audioService.onError = nil
         pythonBridge?.onTranscript = nil
         pythonBridge?.onSubtitle = nil
+        pythonBridge?.onInterim = nil
         pythonBridge?.onError = nil
         pythonBridge?.onStatusChange = nil
 
@@ -220,6 +229,7 @@ struct MenuBarView: View {
         appState.isCapturing = false
         appState.status = .idle
         appState.currentSubtitle = nil
+        appState.currentInterim = nil
         appState.subtitleHistory.removeAll()
     }
 }

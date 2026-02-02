@@ -41,6 +41,12 @@ struct SubtitleOverlay: View {
                                 .opacity(opacityForIndex(index))
                                 .id(entry.id)
                         }
+
+                        // Interim（正在說的話）
+                        if let interim = appState.currentInterim, !interim.isEmpty {
+                            InterimRow(text: interim)
+                                .id("interim")
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
@@ -51,6 +57,12 @@ struct SubtitleOverlay: View {
                         withAnimation {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
+                    }
+                }
+                .onChangeCompat(of: appState.currentInterim) {
+                    // interim 更新時捲到底部（不帶動畫，避免高頻更新造成抖動）
+                    if appState.currentInterim != nil {
+                        proxy.scrollTo("interim", anchor: .bottom)
                     }
                 }
             }
@@ -119,6 +131,25 @@ struct SubtitleRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - InterimRow
+
+/// Interim 文字列（正在說的話）
+struct InterimRow: View {
+    let text: String
+
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: appState.subtitleFontSize * 0.85))
+            .foregroundColor(.cyan.opacity(0.8))
+            .italic()
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

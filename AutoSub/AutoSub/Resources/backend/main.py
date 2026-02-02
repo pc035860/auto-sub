@@ -66,6 +66,13 @@ def main():
     )
     print("[Python] Translator initialized", file=sys.stderr, flush=True)
 
+    # Interim 回呼（即時顯示正在說的話）
+    def on_interim(text: str):
+        output_json({
+            "type": "interim",
+            "text": text
+        })
+
     # 翻譯回呼（含重試）
     def on_transcript(transcript_id: str, text: str):
         print(f"[Python] on_transcript called with id={transcript_id}, text={text}", file=sys.stderr, flush=True)
@@ -111,6 +118,7 @@ def main():
             api_key=deepgram_key,
             language=source_lang,
             on_transcript=on_transcript,
+            on_interim=on_interim,
             endpointing_ms=endpointing_ms,
             utterance_end_ms=utterance_end_ms,
         ) as transcriber:

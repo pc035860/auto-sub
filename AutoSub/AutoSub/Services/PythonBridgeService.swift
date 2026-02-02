@@ -94,6 +94,9 @@ class PythonBridgeService: ObservableObject {
     /// 字幕回呼（翻譯完成）
     var onSubtitle: ((SubtitleEntry) -> Void)?
 
+    /// Interim 回呼（text）- 正在說的話
+    var onInterim: ((String) -> Void)?
+
     /// 錯誤回呼
     var onError: ((String) -> Void)?
 
@@ -294,6 +297,13 @@ class PythonBridgeService: ObservableObject {
                    let text = json["text"] as? String {
                     print("[PythonBridge] Transcript received - id: \(idString), text: \(text)")
                     self.onTranscript?(id, text)
+                }
+
+            case "interim":
+                // 處理 interim（正在說的話）
+                if let text = json["text"] as? String {
+                    print("[PythonBridge] Interim received: \(text)")
+                    self.onInterim?(text)
                 }
 
             case "subtitle":

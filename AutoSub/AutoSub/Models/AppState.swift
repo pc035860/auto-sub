@@ -40,6 +40,10 @@ class AppState: ObservableObject {
     /// 字幕歷史記錄（最多保留 3 筆）
     @Published var subtitleHistory: [SubtitleEntry] = []
 
+    // MARK: - Interim（正在說的話）
+    /// 當前 interim 文字（正在說的話，尚未 final）
+    @Published var currentInterim: String?
+
     // MARK: - 字幕位置
     /// 字幕框是否鎖定
     @Published var isSubtitleLocked: Bool = true
@@ -68,6 +72,9 @@ class AppState: ObservableObject {
 
     /// 新增字幕（原文，翻譯中狀態）
     func addTranscript(id: UUID, text: String) {
+        // 清空 interim（已經變成 final 了）
+        currentInterim = nil
+
         let entry = SubtitleEntry(id: id, originalText: text)
         subtitleHistory.append(entry)
 
@@ -83,13 +90,21 @@ class AppState: ObservableObject {
     /// 更新字幕翻譯
     func updateTranslation(id: UUID, translation: String) {
         if let index = subtitleHistory.firstIndex(where: { $0.id == id }) {
-            subtitleHistory[index].translatedText = translation
+            // 修復：建立新的 entry 並重新賦值，確保觸發 @Published
+            var updatedEntry = subtitleHistory[index]
+            updatedEntry.translatedText = translation
+            subtitleHistory[index] = updatedEntry
 
             // 若是最新的，也更新 currentSubtitle
-            if subtitleHistory[index].id == currentSubtitle?.id {
-                currentSubtitle = subtitleHistory[index]
+            if updatedEntry.id == currentSubtitle?.id {
+                currentSubtitle = updatedEntry
             }
         }
+    }
+
+    /// 更新 interim 文字（正在說的話）
+    func updateInterim(_ text: String) {
+        currentInterim = text
     }
 
     // MARK: - 字幕位置管理

@@ -36,6 +36,8 @@ struct SubtitleEntry: Identifiable, Codable, Equatable {
     }
 
     static func == (lhs: SubtitleEntry, rhs: SubtitleEntry) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id &&
+        lhs.originalText == rhs.originalText &&
+        lhs.translatedText == rhs.translatedText
     }
 }
