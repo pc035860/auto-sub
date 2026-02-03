@@ -34,6 +34,20 @@ class AppState: ObservableObject {
 
     // MARK: - 字幕設定
     @Published var subtitleFontSize: CGFloat = 24
+    @Published var subtitleWindowWidth: CGFloat = 0
+    @Published var subtitleWindowHeight: CGFloat = 0
+    @Published var subtitleWindowOpacity: Double = 0.7
+    @Published var subtitleHistoryLimit: Int = 3 {
+        didSet {
+            if subtitleHistoryLimit < 1 {
+                subtitleHistoryLimit = 1
+            } else if subtitleHistoryLimit > 6 {
+                subtitleHistoryLimit = 6
+            }
+            trimSubtitleHistoryIfNeeded()
+        }
+    }
+    @Published var subtitleAutoOpacityByCount: Bool = true
     @Published var showOriginalText: Bool = true
 
     // MARK: - 字幕歷史
@@ -55,9 +69,6 @@ class AppState: ObservableObject {
     @Published var subtitlePositionY: CGFloat?
 
     // MARK: - 常數
-    /// 最大歷史記錄數量
-    static let maxHistoryCount = 3
-
     // MARK: - 錯誤訊息
     @Published var errorMessage: String?
 
@@ -79,9 +90,7 @@ class AppState: ObservableObject {
         subtitleHistory.append(entry)
 
         // 超過最大數量時移除最舊的
-        if subtitleHistory.count > Self.maxHistoryCount {
-            subtitleHistory.removeFirst()
-        }
+        trimSubtitleHistoryIfNeeded()
 
         // 同步更新 currentSubtitle（最新的）
         currentSubtitle = entry
@@ -113,6 +122,12 @@ class AppState: ObservableObject {
     /// 更新 interim 文字（正在說的話）
     func updateInterim(_ text: String) {
         currentInterim = text
+    }
+
+    private func trimSubtitleHistoryIfNeeded() {
+        if subtitleHistory.count > subtitleHistoryLimit {
+            subtitleHistory = Array(subtitleHistory.suffix(subtitleHistoryLimit))
+        }
     }
 
     // MARK: - 字幕位置管理
@@ -157,6 +172,11 @@ class AppState: ObservableObject {
             sourceLanguage: sourceLanguage,
             targetLanguage: targetLanguage,
             subtitleFontSize: subtitleFontSize,
+            subtitleWindowWidth: subtitleWindowWidth,
+            subtitleWindowHeight: subtitleWindowHeight,
+            subtitleWindowOpacity: subtitleWindowOpacity,
+            subtitleHistoryLimit: subtitleHistoryLimit,
+            subtitleAutoOpacityByCount: subtitleAutoOpacityByCount,
             showOriginalText: showOriginalText
         )
         try? ConfigurationService.shared.saveConfiguration(config)

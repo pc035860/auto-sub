@@ -41,6 +41,9 @@ final class SubtitleWindowController {
         // 更新滑鼠事件處理
         updateMouseEventHandling()
 
+        // 更新視窗大小
+        applyRenderSettings()
+
         window?.orderFront(nil)
         print("[SubtitleWindow] Window shown, frame: \(window?.frame ?? .zero)")
     }
@@ -55,6 +58,25 @@ final class SubtitleWindowController {
         guard let appState = appState else { return }
         window?.ignoresMouseEvents = appState.isSubtitleLocked
         print("[SubtitleWindow] Mouse events ignored: \(appState.isSubtitleLocked)")
+    }
+
+    /// 套用字幕渲染設定（寬度、尺寸）
+    func applyRenderSettings() {
+        guard let window = window else { return }
+        let screen = window.screen ?? NSScreen.main
+        guard let screenFrame = screen?.visibleFrame else { return }
+
+        let newSize = resolvedWindowSize(for: screenFrame)
+        let currentFrame = window.frame
+        var newX = currentFrame.midX - newSize.width / 2
+        var newY = currentFrame.origin.y
+
+        // 確保視窗在螢幕範圍內
+        newX = max(screenFrame.minX, min(newX, screenFrame.maxX - newSize.width))
+        newY = max(screenFrame.minY, min(newY, screenFrame.maxY - newSize.height))
+
+        let newFrame = NSRect(x: newX, y: newY, width: newSize.width, height: newSize.height)
+        window.setFrame(newFrame, display: true)
     }
 
     /// 重設位置到預設
@@ -81,12 +103,11 @@ final class SubtitleWindowController {
         let screenFrame = screen.visibleFrame
 
         // 計算初始位置和尺寸
-        let maxWidth = screenFrame.width * 0.8
-        let maxHeight = screenFrame.height * 0.2
-        let x = screenFrame.origin.x + (screenFrame.width - maxWidth) / 2
+        let size = resolvedWindowSize(for: screenFrame)
+        let x = screenFrame.origin.x + (screenFrame.width - size.width) / 2
         let y = screenFrame.origin.y + 50
 
-        let frame = NSRect(x: x, y: y, width: maxWidth, height: maxHeight)
+        let frame = NSRect(x: x, y: y, width: size.width, height: size.height)
 
         // 建立視窗
         window = SubtitleWindow(
@@ -113,6 +134,22 @@ final class SubtitleWindowController {
 
         hostingView = NSHostingView(rootView: AnyView(EmptyView()))
         window?.contentView = hostingView
+    }
+
+    private func resolvedWindowSize(for screenFrame: NSRect) -> CGSize {
+        let minWidth: CGFloat = 400
+        let maxWidth = screenFrame.width * 0.95
+        let defaultWidth = screenFrame.width * 0.8
+        let configuredWidth = appState?.subtitleWindowWidth ?? 0
+        let rawWidth = configuredWidth > 0 ? configuredWidth : defaultWidth
+        let width = max(minWidth, min(rawWidth, maxWidth))
+        let minHeight: CGFloat = 120
+        let maxHeight = screenFrame.height * 0.6
+        let defaultHeight = screenFrame.height * 0.2
+        let configuredHeight = appState?.subtitleWindowHeight ?? 0
+        let rawHeight = configuredHeight > 0 ? configuredHeight : defaultHeight
+        let height = max(minHeight, min(rawHeight, maxHeight))
+        return CGSize(width: width, height: height)
     }
 
     private func restorePosition() {

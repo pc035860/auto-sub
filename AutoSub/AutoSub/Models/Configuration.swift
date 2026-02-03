@@ -15,6 +15,11 @@ struct Configuration: Codable {
     var sourceLanguage: String = "ja"
     var targetLanguage: String = "zh-TW"
     var subtitleFontSize: CGFloat = 24
+    var subtitleWindowWidth: CGFloat = 0
+    var subtitleWindowHeight: CGFloat = 0
+    var subtitleWindowOpacity: Double = 0.7
+    var subtitleHistoryLimit: Int = 3
+    var subtitleAutoOpacityByCount: Bool = true
     var showOriginalText: Bool = true
 
     // MARK: - Deepgram 斷句參數（Phase 1 調整）
@@ -32,6 +37,11 @@ struct Configuration: Codable {
         sourceLanguage: String = "ja",
         targetLanguage: String = "zh-TW",
         subtitleFontSize: CGFloat = 24,
+        subtitleWindowWidth: CGFloat = 0,
+        subtitleWindowHeight: CGFloat = 0,
+        subtitleWindowOpacity: Double = 0.7,
+        subtitleHistoryLimit: Int = 3,
+        subtitleAutoOpacityByCount: Bool = true,
         showOriginalText: Bool = true,
         deepgramEndpointingMs: Int = 200,
         deepgramUtteranceEndMs: Int = 1000,
@@ -43,6 +53,11 @@ struct Configuration: Codable {
         self.sourceLanguage = sourceLanguage
         self.targetLanguage = targetLanguage
         self.subtitleFontSize = subtitleFontSize
+        self.subtitleWindowWidth = subtitleWindowWidth
+        self.subtitleWindowHeight = subtitleWindowHeight
+        self.subtitleWindowOpacity = subtitleWindowOpacity
+        self.subtitleHistoryLimit = subtitleHistoryLimit
+        self.subtitleAutoOpacityByCount = subtitleAutoOpacityByCount
         self.showOriginalText = showOriginalText
         self.deepgramEndpointingMs = deepgramEndpointingMs
         self.deepgramUtteranceEndMs = deepgramUtteranceEndMs
@@ -56,6 +71,11 @@ struct Configuration: Codable {
         case sourceLanguage
         case targetLanguage
         case subtitleFontSize
+        case subtitleWindowWidth
+        case subtitleWindowHeight
+        case subtitleWindowOpacity
+        case subtitleHistoryLimit
+        case subtitleAutoOpacityByCount
         case showOriginalText
         case deepgramEndpointingMs
         case deepgramUtteranceEndMs
@@ -71,6 +91,11 @@ struct Configuration: Codable {
         sourceLanguage = try container.decodeIfPresent(String.self, forKey: .sourceLanguage) ?? "ja"
         targetLanguage = try container.decodeIfPresent(String.self, forKey: .targetLanguage) ?? "zh-TW"
         subtitleFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleFontSize) ?? 24
+        subtitleWindowWidth = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleWindowWidth) ?? 0
+        subtitleWindowHeight = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleWindowHeight) ?? 0
+        subtitleWindowOpacity = try container.decodeIfPresent(Double.self, forKey: .subtitleWindowOpacity) ?? 0.7
+        subtitleHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .subtitleHistoryLimit) ?? 3
+        subtitleAutoOpacityByCount = try container.decodeIfPresent(Bool.self, forKey: .subtitleAutoOpacityByCount) ?? true
         showOriginalText = try container.decodeIfPresent(Bool.self, forKey: .showOriginalText) ?? true
         deepgramEndpointingMs = try container.decodeIfPresent(Int.self, forKey: .deepgramEndpointingMs) ?? 200
         deepgramUtteranceEndMs = try container.decodeIfPresent(Int.self, forKey: .deepgramUtteranceEndMs) ?? 1000

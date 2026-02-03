@@ -86,7 +86,13 @@ struct AutoSubApp: App {
         // 4. 監聯字幕變化
         setupSubtitleObserver()
 
-        // 5. 監聽字幕鎖定狀態變更
+        // 5. 監聽錄音狀態變更（啟動時顯示字幕視窗）
+        setupCaptureStateObserver()
+
+        // 6. 監聽字幕渲染設定變更
+        setupSubtitleRenderObserver()
+
+        // 7. 監聽字幕鎖定狀態變更
         setupLockStateObserver()
 
         print("[AutoSubApp] Initialization completed")
@@ -102,6 +108,11 @@ struct AutoSubApp: App {
         appState.sourceLanguage = config.sourceLanguage
         appState.targetLanguage = config.targetLanguage
         appState.subtitleFontSize = config.subtitleFontSize
+        appState.subtitleWindowWidth = config.subtitleWindowWidth
+        appState.subtitleWindowHeight = config.subtitleWindowHeight
+        appState.subtitleWindowOpacity = config.subtitleWindowOpacity
+        appState.subtitleHistoryLimit = config.subtitleHistoryLimit
+        appState.subtitleAutoOpacityByCount = config.subtitleAutoOpacityByCount
         appState.showOriginalText = config.showOriginalText
     }
 
@@ -153,6 +164,37 @@ struct AutoSubApp: App {
             }
             .store(in: &cancellables)
         print("[AutoSubApp] Subtitle observer setup complete")
+    }
+
+    /// 監聽錄音狀態變更
+    @MainActor
+    private func setupCaptureStateObserver() {
+        appState.$isCapturing
+            .receive(on: DispatchQueue.main)
+            .sink { isCapturing in
+                if isCapturing && isSubtitleVisible {
+                    updateSubtitleWindow()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// 監聽字幕渲染設定變更
+    @MainActor
+    private func setupSubtitleRenderObserver() {
+        appState.$subtitleWindowWidth
+            .receive(on: DispatchQueue.main)
+            .sink { [subtitleWindowController] _ in
+                subtitleWindowController.applyRenderSettings()
+            }
+            .store(in: &cancellables)
+
+        appState.$subtitleWindowHeight
+            .receive(on: DispatchQueue.main)
+            .sink { [subtitleWindowController] _ in
+                subtitleWindowController.applyRenderSettings()
+            }
+            .store(in: &cancellables)
     }
 
     /// 更新字幕視窗

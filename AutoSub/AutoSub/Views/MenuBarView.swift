@@ -119,6 +119,12 @@ struct MenuBarView: View {
     private func bringSettingsToFront() {
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            if let settingsWindow = NSApp.windows.first(where: {
+                $0.identifier?.rawValue == "AutoSubSettingsWindow"
+            }) {
+                settingsWindow.makeKeyAndOrderFront(nil)
+                return
+            }
             if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
                 window.makeKeyAndOrderFront(nil)
             }
@@ -245,7 +251,10 @@ struct MenuBarView: View {
         // 2. 停止 Python Bridge
         pythonBridge?.stop()
 
-        // 3. 清理回呼
+        // 3. 關閉字幕視窗
+        subtitleWindowController?.hide()
+
+        // 4. 清理回呼
         audioService.onAudioData = nil
         audioService.onError = nil
         pythonBridge?.onTranscript = nil
@@ -255,7 +264,7 @@ struct MenuBarView: View {
         pythonBridge?.onError = nil
         pythonBridge?.onStatusChange = nil
 
-        // 4. 更新狀態
+        // 5. 更新狀態
         appState.isCapturing = false
         appState.status = .idle
         appState.currentSubtitle = nil

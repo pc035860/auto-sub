@@ -13,6 +13,7 @@ struct SubtitleOverlay: View {
 
     /// 歷史字幕的透明度（最舊 → 最新）
     private let opacityLevels: [Double] = [0.3, 0.6, 1.0]
+    private let minOpacity: Double = 0.3
 
     var body: some View {
         VStack(spacing: 0) {
@@ -70,18 +71,22 @@ struct SubtitleOverlay: View {
         .frame(maxWidth: maxWidth, maxHeight: maxHeight)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(0.7))
+                .fill(Color.black.opacity(appState.subtitleWindowOpacity))
         )
     }
 
     /// 最大寬度（螢幕 80%）
     private var maxWidth: CGFloat {
-        (NSScreen.main?.visibleFrame.width ?? 1920) * 0.8
+        let screenWidth = NSScreen.main?.visibleFrame.width ?? 1920
+        let configuredWidth = appState.subtitleWindowWidth > 0 ? appState.subtitleWindowWidth : screenWidth * 0.8
+        return min(configuredWidth, screenWidth * 0.95)
     }
 
     /// 最大高度（螢幕 20%）
     private var maxHeight: CGFloat {
-        (NSScreen.main?.visibleFrame.height ?? 1080) * 0.2
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 1080
+        let configuredHeight = appState.subtitleWindowHeight > 0 ? appState.subtitleWindowHeight : screenHeight * 0.2
+        return min(configuredHeight, screenHeight * 0.6)
     }
 
     /// 根據索引計算透明度
@@ -89,10 +94,13 @@ struct SubtitleOverlay: View {
         let count = appState.subtitleHistory.count
         let reversedIndex = count - 1 - index  // 0 = 最新, count-1 = 最舊
 
-        if reversedIndex < opacityLevels.count {
-            return opacityLevels[opacityLevels.count - 1 - reversedIndex]
+        if appState.subtitleAutoOpacityByCount {
+            guard count > 1 else { return 1.0 }
+            let step = (1.0 - minOpacity) / Double(max(1, count - 1))
+            return max(minOpacity, 1.0 - (Double(reversedIndex) * step))
         }
-        return opacityLevels.first ?? 0.3
+
+        return 1.0
     }
 }
 
