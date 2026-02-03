@@ -18,19 +18,19 @@ class TranslationResult(BaseModel):
     correction: Optional[str] = None
 
 
-SYSTEM_INSTRUCTION = """你是專業的日文即時字幕翻譯員。請將日文翻譯成繁體中文。
+SYSTEM_INSTRUCTION_TEMPLATE = """你是專業的{source_label}即時字幕翻譯員。請將{source_label}翻譯成{target_label}。
 
 翻譯規則：
 1. 保持原意，語句通順自然
-2. 人名保留日文發音的中文音譯，前後文中同一人名請保持一致
-3. 作品名、專有名詞使用台灣常見譯法
+2. 人名保留原文發音的音譯，前後文中同一人名請保持一致
+3. 作品名、專有名詞使用常見譯法
 4. 只輸出翻譯結果，不要加任何解釋或標點符號說明
 5. 若句子明顯不完整，可根據上下文適當補充或延續前句
 
 注意：這是即時字幕翻譯，請參考之前的對話歷史保持翻譯一致性。"""
 
-SUMMARIZE_PROMPT = """請根據以上翻譯歷史，整理：
-1. 人名/專有名詞對照清單（格式：日文 → 中文，每行一個）
+SUMMARIZE_PROMPT_TEMPLATE = """請根據以上翻譯歷史，整理：
+1. 人名/專有名詞對照清單（格式：{source_label} → {target_label}，每行一個）
 2. 這個對話的主題或背景（一句話）
 
 只輸出整理結果，不要其他說明。"""
@@ -42,12 +42,12 @@ CONTEXT_HANDOVER_TEMPLATE = """延續之前的翻譯工作。以下是已確定�
 請繼續保持翻譯一致性。"""
 
 
-CONTEXT_CORRECTION_PROMPT = """翻譯以下日文句子，並根據上下文判斷是否需要修正前句翻譯。
+CONTEXT_CORRECTION_PROMPT_TEMPLATE = """翻譯以下{source_label}句子，並根據上下文判斷是否需要修正前句翻譯。
 
 當前句子：「{current_text}」
 
-前句原文：「{prev_text}」
-前句翻譯：「{prev_translation}」
+前句原文（{source_label}）：「{prev_text}」
+前句翻譯（{target_label}）：「{prev_translation}」
 
 翻譯結果放入 "current"，若需修正前句翻譯則填入 "correction"，否則設為 null。
 
@@ -57,12 +57,20 @@ CONTEXT_CORRECTION_PROMPT = """翻譯以下日文句子，並根據上下文判�
 - 人名/專有名詞在前句翻譯不一致
 - 如果前句翻譯沒問題，correction 設為 null"""
 
-
-SIMPLE_TRANSLATE_PROMPT = """翻譯以下日文句子：
+SIMPLE_TRANSLATE_PROMPT_TEMPLATE = """翻譯以下{source_label}句子：
 
 「{text}」
 
 翻譯結果放入 "current"，correction 設為 null。"""
+
+
+LANGUAGE_LABELS = {
+    "ja": "日文",
+    "en": "英文",
+    "ko": "韓文",
+    "zh-TW": "繁體中文",
+    "zh-CN": "簡體中文",
+}
 
 
 class Translator:
@@ -79,6 +87,8 @@ class Translator:
         self,
         api_key: str,
         model: str = "gemini-2.5-flash-lite-preview-09-2025",
+        source_language: str = "ja",
+        target_language: str = "zh-TW",
         max_context_tokens: int = 100_000,
     ):
         """
@@ -87,15 +97,34 @@ class Translator:
         Args:
             api_key: Gemini API Key
             model: 模型名稱 (預設 gemini-2.5-flash-lite-preview-09-2025)
+            source_language: 原文語言
+            target_language: 翻譯目標語言
             max_context_tokens: 最大 context tokens 閾值 (預設 100K)
         """
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.max_context_tokens = max_context_tokens
+        self.source_language = source_language
+        self.target_language = target_language
+
+        source_label = LANGUAGE_LABELS.get(source_language, source_language)
+        target_label = LANGUAGE_LABELS.get(target_language, target_language)
+        self._system_instruction = SYSTEM_INSTRUCTION_TEMPLATE.format(
+            source_label=source_label,
+            target_label=target_label,
+        )
+        self._summarize_prompt = SUMMARIZE_PROMPT_TEMPLATE.format(
+            source_label=source_label,
+            target_label=target_label,
+        )
+        self._context_correction_template = CONTEXT_CORRECTION_PROMPT_TEMPLATE
+        self._simple_translate_template = SIMPLE_TRANSLATE_PROMPT_TEMPLATE
+        self._source_label = source_label
+        self._target_label = target_label
 
         thinking_config = self._resolve_thinking_config()
         config_kwargs = dict(
-            system_instruction=SYSTEM_INSTRUCTION,
+            system_instruction=self._system_instruction,
             temperature=0.2,
             response_mime_type="application/json",
             response_schema=TranslationResult,
@@ -105,7 +134,7 @@ class Translator:
         self._config = types.GenerateContentConfig(**config_kwargs)
         # Summarization 用的 plain text config（不帶 JSON schema）
         plain_kwargs = dict(
-            system_instruction=SYSTEM_INSTRUCTION,
+            system_instruction=self._system_instruction,
             temperature=0.2,
         )
         if thinking_config is not None:
@@ -120,19 +149,24 @@ class Translator:
 
     def translate(self, text: str) -> str:
         """
-        翻譯日文到繁體中文
+        翻譯原文到目標語言
 
         Args:
-            text: 日文文字
+            text: 原文文字
 
         Returns:
-            翻譯後的繁體中文
+            翻譯後的目標語言文字
         """
         if not text.strip():
             return ""
 
         try:
-            response = self._chat.send_message(f"翻譯：{text}")
+            response = self._chat.send_message(
+                self._simple_translate_template.format(
+                    source_label=self._source_label,
+                    text=text,
+                )
+            )
 
             # 追蹤 token 使用量
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
@@ -184,7 +218,7 @@ class Translator:
             summary_contents = list(history) + [
                 types.Content(
                     role="user",
-                    parts=[types.Part.from_text(text=SUMMARIZE_PROMPT)]
+                    parts=[types.Part.from_text(text=self._summarize_prompt)]
                 )
             ]
             summary_response = self.client.models.generate_content(
@@ -237,7 +271,10 @@ class Translator:
         try:
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=f"將以下日文翻譯成繁體中文，只輸出翻譯結果：\n{text}",
+                contents=(
+                    f"將以下{self._source_label}翻譯成{self._target_label}，"
+                    f"只輸出翻譯結果：\n{text}"
+                ),
                 config=types.GenerateContentConfig(temperature=0.2),
             )
             return response.text.strip()
@@ -259,8 +296,8 @@ class Translator:
         翻譯當前文字，並根據上下文可能修正前句翻譯
 
         Args:
-            current_text: 當前要翻譯的日文
-            prev_text: 前句日文原文（可選）
+            current_text: 當前要翻譯的原文
+            prev_text: 前句原文（可選）
             prev_translation: 前句翻譯（可選）
 
         Returns:
@@ -272,13 +309,18 @@ class Translator:
         try:
             # 根據是否有前句決定使用哪個 prompt
             if prev_text and prev_translation:
-                prompt = CONTEXT_CORRECTION_PROMPT.format(
+                prompt = self._context_correction_template.format(
+                    source_label=self._source_label,
+                    target_label=self._target_label,
                     current_text=current_text,
                     prev_text=prev_text,
                     prev_translation=prev_translation
                 )
             else:
-                prompt = SIMPLE_TRANSLATE_PROMPT.format(text=current_text)
+                prompt = self._simple_translate_template.format(
+                    source_label=self._source_label,
+                    text=current_text,
+                )
 
             response = self._chat.send_message(prompt)
 

@@ -38,6 +38,7 @@ def main():
     deepgram_key = os.environ.get("DEEPGRAM_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
+    target_lang = os.environ.get("TARGET_LANGUAGE", "zh-TW")
     gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite-preview-09-2025")
 
     # Deepgram 斷句設定（Phase 1 調整後的新預設值）
@@ -69,6 +70,8 @@ def main():
     translator = Translator(
         api_key=gemini_key,
         model=gemini_model,
+        source_language=source_lang,
+        target_language=target_lang,
         max_context_tokens=max_context_tokens,
     )
     print("[Python] Translator initialized", file=sys.stderr, flush=True)
