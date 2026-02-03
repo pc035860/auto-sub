@@ -13,6 +13,12 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            // Profile 設定
+            ProfileSettingsView()
+                .tabItem {
+                    Label("Profile", systemImage: "person.text.rectangle")
+                }
+
             // API 設定
             APISettingsView()
                 .tabItem {
@@ -31,7 +37,7 @@ struct SettingsView: View {
                     Label("字幕渲染", systemImage: "rectangle.on.rectangle")
                 }
         }
-        .frame(width: 450, height: 440)
+        .frame(width: 500, height: 560)
         .background(SettingsWindowIdentifier())
         // 設定已在 AutoSubApp 啟動時載入，不需要重複載入
     }
@@ -59,29 +65,6 @@ struct APISettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                Picker("原文語言", selection: $appState.sourceLanguage) {
-                    Text("日文").tag("ja")
-                    Text("英文").tag("en")
-                    Text("韓文").tag("ko")
-                }
-                .onChangeCompat(of: appState.sourceLanguage) {
-                    appState.saveConfiguration()
-                }
-
-                Picker("翻譯語言", selection: $appState.targetLanguage) {
-                    Text("繁體中文").tag("zh-TW")
-                    Text("簡體中文").tag("zh-CN")
-                    Text("英文").tag("en")
-                }
-                .onChangeCompat(of: appState.targetLanguage) {
-                    appState.saveConfiguration()
-                }
-            } header: {
-                Text("語言設定")
-            }
-            .disabled(appState.isCapturing)
-
             Section {
                 SecureField("Deepgram API Key", text: $appState.deepgramApiKey)
                     .onChangeCompat(of: appState.deepgramApiKey) {
@@ -131,6 +114,255 @@ struct APISettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+    }
+}
+
+// MARK: - Profile 設定
+
+struct ProfileSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var nameDraft: String = ""
+    @State private var translationContextDraft: String = ""
+    @State private var keytermsDraft: String = ""
+    @State private var lastSelectedProfileId: UUID?
+    @FocusState private var focusedField: Field?
+
+    private enum Field {
+        case name
+        case context
+        case keyterms
+    }
+
+    private var selectedProfileBinding: Binding<UUID> {
+        Binding(
+            get: { appState.selectedProfileId },
+            set: { newValue in
+                appState.selectProfile(id: newValue)
+            }
+        )
+    }
+
+    private var sourceLanguageBinding: Binding<String> {
+        Binding(
+            get: { appState.currentProfile.sourceLanguage },
+            set: { newValue in
+                appState.updateCurrentProfile { $0.sourceLanguage = newValue }
+            }
+        )
+    }
+
+    private var targetLanguageBinding: Binding<String> {
+        Binding(
+            get: { appState.currentProfile.targetLanguage },
+            set: { newValue in
+                appState.updateCurrentProfile { $0.targetLanguage = newValue }
+            }
+        )
+    }
+
+    private var endpointingBinding: Binding<Int> {
+        Binding(
+            get: { appState.currentProfile.deepgramEndpointingMs },
+            set: { newValue in
+                appState.updateCurrentProfile { $0.deepgramEndpointingMs = newValue }
+            }
+        )
+    }
+
+    private var utteranceEndBinding: Binding<Int> {
+        Binding(
+            get: { appState.currentProfile.deepgramUtteranceEndMs },
+            set: { newValue in
+                appState.updateCurrentProfile { $0.deepgramUtteranceEndMs = newValue }
+            }
+        )
+    }
+
+    private var maxBufferCharsBinding: Binding<Int> {
+        Binding(
+            get: { appState.currentProfile.deepgramMaxBufferChars },
+            set: { newValue in
+                appState.updateCurrentProfile { $0.deepgramMaxBufferChars = newValue }
+            }
+        )
+    }
+
+    private var keytermsDraftCount: Int {
+        keytermsDraft
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .count
+    }
+
+    private func loadDrafts() {
+        let profile = appState.currentProfile
+        nameDraft = profile.name
+        translationContextDraft = profile.translationContext
+        keytermsDraft = profile.keyterms.joined(separator: "\n")
+    }
+
+    private func commitName(to profileId: UUID) {
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmed.isEmpty ? "未命名 Profile" : nameDraft
+        if finalName != nameDraft {
+            nameDraft = finalName
+        }
+        appState.updateProfile(id: profileId) { $0.name = finalName }
+    }
+
+    private func commitTranslationContext(to profileId: UUID) {
+        appState.updateProfile(id: profileId) { $0.translationContext = translationContextDraft }
+    }
+
+    private func commitKeyterms(to profileId: UUID) {
+        let terms = keytermsDraft
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        appState.updateProfile(id: profileId) { $0.keyterms = terms }
+    }
+
+    private func commitDrafts(to profileId: UUID) {
+        commitName(to: profileId)
+        commitTranslationContext(to: profileId)
+        commitKeyterms(to: profileId)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("目前 Profile", selection: selectedProfileBinding) {
+                    ForEach(appState.profiles) { profile in
+                        Text(profile.displayName).tag(profile.id)
+                    }
+                }
+
+                HStack {
+                    Button("新增") {
+                        appState.addProfile()
+                    }
+                    .disabled(appState.isCapturing)
+
+                    Button("刪除") {
+                        appState.deleteSelectedProfile()
+                    }
+                    .disabled(appState.isCapturing || appState.profiles.count <= 1)
+                }
+            } header: {
+                Text("Profile")
+            } footer: {
+                Text("擷取中無法切換或編輯 Profile")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                TextField("名稱", text: $nameDraft)
+                    .focused($focusedField, equals: .name)
+                    .onSubmit {
+                        commitDrafts(to: appState.selectedProfileId)
+                    }
+            } header: {
+                Text("基本資訊")
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                TextEditor(text: $translationContextDraft)
+                    .frame(minHeight: 90)
+                    .focused($focusedField, equals: .context)
+            } header: {
+                Text("翻譯背景資訊")
+            } footer: {
+                Text("可輸入人物、節目或領域背景，提升翻譯一致性。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                TextEditor(text: $keytermsDraft)
+                    .frame(minHeight: 90)
+                    .focused($focusedField, equals: .keyterms)
+                HStack {
+                    Text("目前：\(keytermsDraftCount) 個")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("建議 20–50 個，總 token 上限 500")
+                        .foregroundColor(.secondary)
+                }
+                .font(.caption)
+            } header: {
+                Text("Deepgram Keyterms（每行一個）")
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                Picker("原文語言", selection: sourceLanguageBinding) {
+                    Text("日文").tag("ja")
+                    Text("英文").tag("en")
+                    Text("韓文").tag("ko")
+                }
+
+                Picker("翻譯語言", selection: targetLanguageBinding) {
+                    Text("繁體中文").tag("zh-TW")
+                    Text("簡體中文").tag("zh-CN")
+                    Text("英文").tag("en")
+                }
+            } header: {
+                Text("語言設定")
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                Stepper(value: endpointingBinding, in: 10...1000, step: 10) {
+                    Text("Endpointing：\(appState.currentProfile.deepgramEndpointingMs) ms")
+                }
+                Text("越小越快切句，但更容易斷得太碎。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Stepper(value: utteranceEndBinding, in: 1000...5000, step: 100) {
+                    Text("Utterance End：\(appState.currentProfile.deepgramUtteranceEndMs) ms")
+                }
+                Text("最小 1000ms；越大越完整，但延遲更高。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Stepper(value: maxBufferCharsBinding, in: 20...120, step: 5) {
+                    Text("Max Buffer：\(appState.currentProfile.deepgramMaxBufferChars) chars")
+                }
+                Text("累積字數上限，達到就強制送出翻譯。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Deepgram 斷句參數")
+            }
+            .disabled(appState.isCapturing)
+        }
+        .formStyle(.grouped)
+        .padding()
+        .onAppear {
+            lastSelectedProfileId = appState.selectedProfileId
+            loadDrafts()
+        }
+        .onChange(of: appState.selectedProfileId) { _ in
+            if let previousId = lastSelectedProfileId {
+                commitDrafts(to: previousId)
+            }
+            lastSelectedProfileId = appState.selectedProfileId
+            loadDrafts()
+        }
+        .onChange(of: focusedField) { newValue in
+            if newValue == nil {
+                commitDrafts(to: appState.selectedProfileId)
+            }
+        }
+        .onDisappear {
+            commitDrafts(to: appState.selectedProfileId)
+        }
     }
 }
 

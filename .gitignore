@@ -20,6 +20,7 @@ poc/systemAudioDump/.build/
 **/*.xcodeproj/xcuserdata/
 **/*.xcworkspace/xcuserdata/
 DerivedData/
+.derivedData/
 *.moved-aside
 *.ipa
 *.dSYM.zip

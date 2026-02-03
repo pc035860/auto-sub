@@ -185,6 +185,8 @@ class PythonBridgeService: ObservableObject {
         env["GEMINI_MAX_CONTEXT_TOKENS"] = String(config.geminiMaxContextTokens)
         env["SOURCE_LANGUAGE"] = config.sourceLanguage
         env["TARGET_LANGUAGE"] = config.targetLanguage
+        env["TRANSLATION_CONTEXT"] = config.translationContext
+        env["DEEPGRAM_KEYTERMS"] = config.deepgramKeyterms.joined(separator: "\n")
         // Phase 1: Deepgram 斷句參數
         env["DEEPGRAM_ENDPOINTING_MS"] = String(config.deepgramEndpointingMs)
         env["DEEPGRAM_UTTERANCE_END_MS"] = String(config.deepgramUtteranceEndMs)

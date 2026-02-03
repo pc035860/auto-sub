@@ -19,6 +19,8 @@ enum AppStatus {
 /// 應用程式狀態管理
 @MainActor
 class AppState: ObservableObject {
+    private static let initialProfile = Profile()
+    private var pendingSaveTask: Task<Void, Never>?
     // MARK: - 運行狀態
     @Published var status: AppStatus = .idle
     @Published var isCapturing: Bool = false
@@ -38,8 +40,10 @@ class AppState: ObservableObject {
             }
         }
     }
-    @Published var sourceLanguage: String = "ja"
-    @Published var targetLanguage: String = "zh-TW"
+
+    // MARK: - Profiles
+    @Published var profiles: [Profile] = [AppState.initialProfile]
+    @Published var selectedProfileId: UUID = AppState.initialProfile.id
 
     // MARK: - 字幕設定
     @Published var subtitleFontSize: CGFloat = 24
@@ -86,6 +90,14 @@ class AppState: ObservableObject {
     /// 是否已準備好（API Keys 都已設定）
     var isReady: Bool {
         !deepgramApiKey.isEmpty && !geminiApiKey.isEmpty
+    }
+
+    /// 目前選取的 Profile
+    var currentProfile: Profile {
+        if let profile = profiles.first(where: { $0.id == selectedProfileId }) {
+            return profile
+        }
+        return profiles.first ?? Profile()
     }
 
     // MARK: - 字幕歷史管理
@@ -170,25 +182,109 @@ class AppState: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "subtitlePositionY")
     }
 
+    // MARK: - Profile 管理
+
+    /// 套用設定檔（確保至少一個 Profile）
+    func applyProfiles(_ newProfiles: [Profile], selectedProfileId: UUID?) {
+        let profilesToUse = newProfiles.isEmpty ? [Profile()] : newProfiles
+        profiles = profilesToUse
+        if let selected = selectedProfileId,
+           profilesToUse.contains(where: { $0.id == selected }) {
+            self.selectedProfileId = selected
+        } else {
+            self.selectedProfileId = profilesToUse.first!.id
+        }
+    }
+
+    /// 切換 Profile
+    func selectProfile(id: UUID) {
+        guard !isCapturing else { return }
+        selectedProfileId = id
+        saveConfiguration()
+    }
+
+    /// 新增 Profile
+    func addProfile() {
+        guard !isCapturing else { return }
+        let base = currentProfile
+        let newProfile = Profile(
+            name: "新 Profile",
+            translationContext: "",
+            keyterms: [],
+            sourceLanguage: base.sourceLanguage,
+            targetLanguage: base.targetLanguage,
+            deepgramEndpointingMs: base.deepgramEndpointingMs,
+            deepgramUtteranceEndMs: base.deepgramUtteranceEndMs,
+            deepgramMaxBufferChars: base.deepgramMaxBufferChars
+        )
+        profiles.append(newProfile)
+        selectedProfileId = newProfile.id
+        saveConfiguration()
+    }
+
+    /// 刪除目前 Profile（至少保留一個）
+    func deleteSelectedProfile() {
+        guard !isCapturing else { return }
+        guard profiles.count > 1 else { return }
+        if let index = profiles.firstIndex(where: { $0.id == selectedProfileId }) {
+            profiles.remove(at: index)
+            selectedProfileId = profiles.first!.id
+            saveConfiguration()
+        }
+    }
+
+    /// 更新目前 Profile
+    func updateCurrentProfile(_ update: (inout Profile) -> Void) {
+        guard !isCapturing else { return }
+        updateProfile(id: selectedProfileId, update)
+    }
+
     // MARK: - 設定儲存
 
     /// 儲存設定到 Keychain
     func saveConfiguration() {
+        let profile = currentProfile
         let config = Configuration(
             deepgramApiKey: deepgramApiKey,
             geminiApiKey: geminiApiKey,
             geminiModel: geminiModel,
             geminiMaxContextTokens: geminiMaxContextTokens,
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage,
             subtitleFontSize: subtitleFontSize,
             subtitleWindowWidth: subtitleWindowWidth,
             subtitleWindowHeight: subtitleWindowHeight,
             subtitleWindowOpacity: subtitleWindowOpacity,
             subtitleHistoryLimit: subtitleHistoryLimit,
             subtitleAutoOpacityByCount: subtitleAutoOpacityByCount,
-            showOriginalText: showOriginalText
+            showOriginalText: showOriginalText,
+            deepgramEndpointingMs: profile.deepgramEndpointingMs,
+            deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
+            deepgramMaxBufferChars: profile.deepgramMaxBufferChars,
+            profiles: profiles,
+            selectedProfileId: selectedProfileId,
+            translationContext: profile.translationContext,
+            deepgramKeyterms: profile.keyterms,
+            sourceLanguage: profile.sourceLanguage,
+            targetLanguage: profile.targetLanguage
         )
         try? ConfigurationService.shared.saveConfiguration(config)
+    }
+
+    /// 更新指定 Profile
+    func updateProfile(id: UUID, _ update: (inout Profile) -> Void) {
+        guard !isCapturing else { return }
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+        update(&profiles[index])
+        scheduleSaveConfiguration()
+    }
+
+    private func scheduleSaveConfiguration() {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self, !Task.isCancelled else { return }
+            await MainActor.run {
+                self.saveConfiguration()
+            }
+        }
     }
 }

@@ -40,6 +40,9 @@ def main():
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
     target_lang = os.environ.get("TARGET_LANGUAGE", "zh-TW")
     gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite-preview-09-2025")
+    translation_context = os.environ.get("TRANSLATION_CONTEXT", "")
+    keyterms_raw = os.environ.get("DEEPGRAM_KEYTERMS", "")
+    keyterms = [line.strip() for line in keyterms_raw.splitlines() if line.strip()]
 
     # Deepgram 斷句設定（Phase 1 調整後的新預設值）
     endpointing_ms = int(os.environ.get("DEEPGRAM_ENDPOINTING_MS", "200"))
@@ -51,11 +54,14 @@ def main():
 
     print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
     print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}, max_buffer_chars={max_buffer_chars}", file=sys.stderr, flush=True)
+    print(f"[Python] Deepgram keyterms: {len(keyterms)} items", file=sys.stderr, flush=True)
     print(
         f"[Python] Gemini config: model={gemini_model}, max_context_tokens={max_context_tokens}",
         file=sys.stderr,
         flush=True,
     )
+    if translation_context.strip():
+        print(f"[Python] Translation context length: {len(translation_context)}", file=sys.stderr, flush=True)
 
     if not deepgram_key or not gemini_key:
         output_json({
@@ -73,6 +79,7 @@ def main():
         source_language=source_lang,
         target_language=target_lang,
         max_context_tokens=max_context_tokens,
+        translation_context=translation_context,
     )
     print("[Python] Translator initialized", file=sys.stderr, flush=True)
 
@@ -183,6 +190,7 @@ def main():
             endpointing_ms=endpointing_ms,
             utterance_end_ms=utterance_end_ms,
             max_buffer_chars=max_buffer_chars,
+            keyterms=keyterms,
         ) as transcriber:
             # 儲存 transcriber 參考
             transcriber_ref[0] = transcriber

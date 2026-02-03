@@ -26,6 +26,26 @@ struct MenuBarView: View {
 
             Divider()
 
+            // Profile 切換
+            Menu {
+                ForEach(appState.profiles) { profile in
+                    Button {
+                        appState.selectProfile(id: profile.id)
+                    } label: {
+                        if profile.id == appState.selectedProfileId {
+                            Label(profile.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(profile.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Label("Profile：\(appState.currentProfile.displayName)", systemImage: "person.text.rectangle")
+            }
+            .disabled(appState.isCapturing)
+
+            Divider()
+
             // 開始/停止按鈕
             Button(action: toggleCapture) {
                 Label(
@@ -147,18 +167,25 @@ struct MenuBarView: View {
         let state = appState
 
         do {
-            // 1. 建立設定（使用 Configuration 的預設 Deepgram 參數）
+            let profile = state.currentProfile
+
+            // 1. 建立設定（使用當前 Profile）
             let config = Configuration(
                 deepgramApiKey: state.deepgramApiKey,
                 geminiApiKey: state.geminiApiKey,
                 geminiModel: state.geminiModel,
                 geminiMaxContextTokens: state.geminiMaxContextTokens,
-                sourceLanguage: state.sourceLanguage,
-                targetLanguage: state.targetLanguage,
                 subtitleFontSize: state.subtitleFontSize,
-                showOriginalText: state.showOriginalText
-                // Deepgram 參數使用 Configuration 的預設值（200ms, 800ms, 50 chars）
-                // 未來若需 UI 可調，可從 AppState 傳入
+                showOriginalText: state.showOriginalText,
+                deepgramEndpointingMs: profile.deepgramEndpointingMs,
+                deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
+                deepgramMaxBufferChars: profile.deepgramMaxBufferChars,
+                profiles: state.profiles,
+                selectedProfileId: state.selectedProfileId,
+                translationContext: profile.translationContext,
+                deepgramKeyterms: profile.keyterms,
+                sourceLanguage: profile.sourceLanguage,
+                targetLanguage: profile.targetLanguage
             )
 
             // 2. 先設定錯誤回呼（在啟動前）

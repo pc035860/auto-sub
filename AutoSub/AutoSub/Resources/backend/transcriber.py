@@ -33,6 +33,7 @@ class Transcriber:
         endpointing_ms: int = 200,
         utterance_end_ms: int = 1000,
         max_buffer_chars: int = 50,
+        keyterms: Optional[list[str]] = None,
     ):
         """
         初始化轉錄器
@@ -47,6 +48,7 @@ class Transcriber:
             endpointing_ms: 靜音判定時間 (毫秒)，預設 200ms（減半以縮短延遲）
             utterance_end_ms: utterance 超時時間 (毫秒)，預設 1000ms（Deepgram 最小值為 1000）
             max_buffer_chars: 最大累積字數，預設 50（減少 38%）
+            keyterms: Deepgram keyterm 提示詞清單（可為 None）
         """
         self.api_key = api_key
         self.language = language
@@ -54,6 +56,7 @@ class Transcriber:
         self.on_interim = on_interim
         self.endpointing_ms = endpointing_ms
         self.utterance_end_ms = utterance_end_ms
+        self.keyterms = keyterms or []
 
         self._client: Optional[DeepgramClient] = None
         self._context_manager = None
@@ -81,7 +84,7 @@ class Transcriber:
 
         # 建立 WebSocket 連線
         print("[Transcriber] Connecting to Deepgram...", file=sys.stderr, flush=True)
-        self._context_manager = self._client.listen.v1.connect(
+        connect_kwargs = dict(
             model="nova-3",
             language=self.language,
             smart_format=True,
@@ -93,6 +96,9 @@ class Transcriber:
             sample_rate=24000,
             channels=2,
         )
+        if self.keyterms:
+            connect_kwargs["keyterm"] = self.keyterms
+        self._context_manager = self._client.listen.v1.connect(**connect_kwargs)
         print("[Transcriber] Entering context manager...", file=sys.stderr, flush=True)
 
         # 使用 timeout 機制來診斷連線問題

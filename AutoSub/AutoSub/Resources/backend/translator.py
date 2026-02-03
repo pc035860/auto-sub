@@ -27,7 +27,7 @@ SYSTEM_INSTRUCTION_TEMPLATE = """你是專業的{source_label}即時字幕翻譯
 4. 只輸出翻譯結果，不要加任何解釋或標點符號說明
 5. 若句子明顯不完整，可根據上下文適當補充或延續前句
 
-注意：這是即時字幕翻譯，請參考之前的對話歷史保持翻譯一致性。"""
+注意：這是即時字幕翻譯，請參考之前的對話歷史保持翻譯一致性。{context_block}"""
 
 SUMMARIZE_PROMPT_TEMPLATE = """請根據以上翻譯歷史，整理：
 1. 人名/專有名詞對照清單（格式：{source_label} → {target_label}，每行一個）
@@ -90,6 +90,7 @@ class Translator:
         source_language: str = "ja",
         target_language: str = "zh-TW",
         max_context_tokens: int = 20_000,
+        translation_context: str = "",
     ):
         """
         初始化翻譯器
@@ -100,6 +101,7 @@ class Translator:
             source_language: 原文語言
             target_language: 翻譯目標語言
             max_context_tokens: 最大 context tokens 閾值 (預設 20K)
+            translation_context: 翻譯背景資訊（可空）
         """
         self.client = genai.Client(api_key=api_key)
         self.model = model
@@ -109,9 +111,13 @@ class Translator:
 
         source_label = LANGUAGE_LABELS.get(source_language, source_language)
         target_label = LANGUAGE_LABELS.get(target_language, target_language)
+        context_block = ""
+        if translation_context and translation_context.strip():
+            context_block = f"\n\n背景資訊：\n{translation_context.strip()}"
         self._system_instruction = SYSTEM_INSTRUCTION_TEMPLATE.format(
             source_label=source_label,
             target_label=target_label,
+            context_block=context_block,
         )
         self._summarize_prompt = SUMMARIZE_PROMPT_TEMPLATE.format(
             source_label=source_label,

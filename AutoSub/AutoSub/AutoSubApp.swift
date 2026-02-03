@@ -106,8 +106,6 @@ struct AutoSubApp: App {
         appState.geminiApiKey = config.geminiApiKey
         appState.geminiModel = config.geminiModel
         appState.geminiMaxContextTokens = config.geminiMaxContextTokens
-        appState.sourceLanguage = config.sourceLanguage
-        appState.targetLanguage = config.targetLanguage
         appState.subtitleFontSize = config.subtitleFontSize
         appState.subtitleWindowWidth = config.subtitleWindowWidth
         appState.subtitleWindowHeight = config.subtitleWindowHeight
@@ -115,6 +113,7 @@ struct AutoSubApp: App {
         appState.subtitleHistoryLimit = config.subtitleHistoryLimit
         appState.subtitleAutoOpacityByCount = config.subtitleAutoOpacityByCount
         appState.showOriginalText = config.showOriginalText
+        appState.applyProfiles(config.profiles, selectedProfileId: config.selectedProfileId)
     }
 
     /// 設定全域快捷鍵
