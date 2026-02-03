@@ -98,10 +98,10 @@ struct AutoSubApp: App {
         let config = ConfigurationService.shared.loadConfiguration()
         appState.deepgramApiKey = config.deepgramApiKey
         appState.geminiApiKey = config.geminiApiKey
+        appState.geminiModel = config.geminiModel
         appState.sourceLanguage = config.sourceLanguage
         appState.targetLanguage = config.targetLanguage
         appState.subtitleFontSize = config.subtitleFontSize
-        appState.subtitleDisplayDuration = config.subtitleDisplayDuration
         appState.showOriginalText = config.showOriginalText
     }
 

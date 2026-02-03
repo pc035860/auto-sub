@@ -38,6 +38,7 @@ def main():
     deepgram_key = os.environ.get("DEEPGRAM_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite-preview-09-2025")
 
     # Deepgram 斷句設定（Phase 1 調整後的新預設值）
     endpointing_ms = int(os.environ.get("DEEPGRAM_ENDPOINTING_MS", "200"))
@@ -49,7 +50,11 @@ def main():
 
     print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
     print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}, max_buffer_chars={max_buffer_chars}", file=sys.stderr, flush=True)
-    print(f"[Python] Gemini config: max_context_tokens={max_context_tokens}", file=sys.stderr, flush=True)
+    print(
+        f"[Python] Gemini config: model={gemini_model}, max_context_tokens={max_context_tokens}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     if not deepgram_key or not gemini_key:
         output_json({
@@ -63,6 +68,7 @@ def main():
     print("[Python] Initializing translator...", file=sys.stderr, flush=True)
     translator = Translator(
         api_key=gemini_key,
+        model=gemini_model,
         max_context_tokens=max_context_tokens,
     )
     print("[Python] Translator initialized", file=sys.stderr, flush=True)

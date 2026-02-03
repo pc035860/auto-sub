@@ -33,6 +33,11 @@ struct SettingsView: View {
 
 struct APISettingsView: View {
     @EnvironmentObject var appState: AppState
+    private let geminiModels: [(id: String, label: String)] = [
+        ("gemini-2.5-flash-lite-preview-09-2025", "2.5 flash-lite"),
+        ("gemini-2.5-flash-preview-09-2025", "2.5 flash"),
+        ("gemini-3-flash-preview", "3 flash")
+    ]
 
     var body: some View {
         Form {
@@ -52,6 +57,21 @@ struct APISettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            .disabled(appState.isCapturing)
+
+            Section {
+                Picker("Gemini 模型", selection: $appState.geminiModel) {
+                    ForEach(geminiModels, id: \.id) { model in
+                        Text(model.label).tag(model.id)
+                    }
+                }
+                .onChangeCompat(of: appState.geminiModel) {
+                    appState.saveConfiguration()
+                }
+            } header: {
+                Text("Gemini 設定")
+            }
+            .disabled(appState.isCapturing)
 
             Section {
                 Picker("原文語言", selection: $appState.sourceLanguage) {
@@ -74,6 +94,7 @@ struct APISettingsView: View {
             } header: {
                 Text("語言設定")
             }
+            .disabled(appState.isCapturing)
         }
         .formStyle(.grouped)
         .padding()
@@ -106,21 +127,6 @@ struct SubtitleSettingsView: View {
                     }
             } header: {
                 Text("顯示設定")
-            }
-
-            Section {
-                Slider(value: $appState.subtitleDisplayDuration, in: 2...10, step: 0.5) {
-                    Text("顯示時間")
-                } minimumValueLabel: {
-                    Text("2s")
-                } maximumValueLabel: {
-                    Text("10s")
-                }
-                .onChangeCompat(of: appState.subtitleDisplayDuration) {
-                    appState.saveConfiguration()
-                }
-            } header: {
-                Text("時間設定")
             }
         }
         .formStyle(.grouped)

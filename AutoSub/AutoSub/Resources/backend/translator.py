@@ -68,10 +68,17 @@ SIMPLE_TRANSLATE_PROMPT = """翻譯以下日文句子：
 class Translator:
     """Gemini 翻譯器（使用 Chat Session 保持上下文，最大化隱式快取效益）"""
 
+    def _resolve_thinking_config(self) -> Optional[types.ThinkingConfig]:
+        if self.model.startswith("gemini-3"):
+            return types.ThinkingConfig(thinking_level="minimal")
+        if self.model.startswith("gemini-2.5"):
+            return types.ThinkingConfig(thinking_budget=0)
+        return None
+
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash-lite",
+        model: str = "gemini-2.5-flash-lite-preview-09-2025",
         max_context_tokens: int = 100_000,
     ):
         """
@@ -79,24 +86,31 @@ class Translator:
 
         Args:
             api_key: Gemini API Key
-            model: 模型名稱 (預設 gemini-2.5-flash-lite)
+            model: 模型名稱 (預設 gemini-2.5-flash-lite-preview-09-2025)
             max_context_tokens: 最大 context tokens 閾值 (預設 100K)
         """
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.max_context_tokens = max_context_tokens
 
-        self._config = types.GenerateContentConfig(
+        thinking_config = self._resolve_thinking_config()
+        config_kwargs = dict(
             system_instruction=SYSTEM_INSTRUCTION,
             temperature=0.2,
             response_mime_type="application/json",
             response_schema=TranslationResult,
         )
+        if thinking_config is not None:
+            config_kwargs["thinking_config"] = thinking_config
+        self._config = types.GenerateContentConfig(**config_kwargs)
         # Summarization 用的 plain text config（不帶 JSON schema）
-        self._plain_config = types.GenerateContentConfig(
+        plain_kwargs = dict(
             system_instruction=SYSTEM_INSTRUCTION,
             temperature=0.2,
         )
+        if thinking_config is not None:
+            plain_kwargs["thinking_config"] = thinking_config
+        self._plain_config = types.GenerateContentConfig(**plain_kwargs)
         self._chat = self.client.chats.create(
             model=self.model,
             config=self._config,

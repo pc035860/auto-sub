@@ -181,6 +181,7 @@ class PythonBridgeService: ObservableObject {
         env["PYTHONUNBUFFERED"] = "1"  // 防止 stdout 緩衝導致阻塞
         env["DEEPGRAM_API_KEY"] = config.deepgramApiKey
         env["GEMINI_API_KEY"] = config.geminiApiKey
+        env["GEMINI_MODEL"] = config.geminiModel
         env["SOURCE_LANGUAGE"] = config.sourceLanguage
         env["TARGET_LANGUAGE"] = config.targetLanguage
         // Phase 1: Deepgram 斷句參數

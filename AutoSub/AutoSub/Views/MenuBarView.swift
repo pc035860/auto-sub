@@ -42,9 +42,12 @@ struct MenuBarView: View {
                 SettingsLink {
                     Label("設定...", systemImage: "gear")
                 }
+                .simultaneousGesture(TapGesture().onEnded {
+                    bringSettingsToFront()
+                })
             } else {
                 Button {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    openSettings()
                 } label: {
                     Label("設定...", systemImage: "gear")
                 }
@@ -107,6 +110,21 @@ struct MenuBarView: View {
         }
     }
 
+    private func openSettings() {
+        // 顯示設定視窗後，強制啟用並把視窗帶到前景
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        bringSettingsToFront()
+    }
+
+    private func bringSettingsToFront() {
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
     private func startCapture() async {
         print("[MenuBarView] startCapture called")
         print("[MenuBarView] pythonBridge is \(pythonBridge == nil ? "nil" : "available")")
@@ -127,10 +145,10 @@ struct MenuBarView: View {
             let config = Configuration(
                 deepgramApiKey: state.deepgramApiKey,
                 geminiApiKey: state.geminiApiKey,
+                geminiModel: state.geminiModel,
                 sourceLanguage: state.sourceLanguage,
                 targetLanguage: state.targetLanguage,
                 subtitleFontSize: state.subtitleFontSize,
-                subtitleDisplayDuration: state.subtitleDisplayDuration,
                 showOriginalText: state.showOriginalText
                 // Deepgram 參數使用 Configuration 的預設值（200ms, 800ms, 50 chars）
                 // 未來若需 UI 可調，可從 AppState 傳入

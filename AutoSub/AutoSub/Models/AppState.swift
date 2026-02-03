@@ -28,12 +28,12 @@ class AppState: ObservableObject {
     // MARK: - API 設定
     @Published var deepgramApiKey: String = ""
     @Published var geminiApiKey: String = ""
+    @Published var geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025"
     @Published var sourceLanguage: String = "ja"
     @Published var targetLanguage: String = "zh-TW"
 
     // MARK: - 字幕設定
     @Published var subtitleFontSize: CGFloat = 24
-    @Published var subtitleDisplayDuration: TimeInterval = 4.0
     @Published var showOriginalText: Bool = true
 
     // MARK: - 字幕歷史
@@ -153,10 +153,10 @@ class AppState: ObservableObject {
         let config = Configuration(
             deepgramApiKey: deepgramApiKey,
             geminiApiKey: geminiApiKey,
+            geminiModel: geminiModel,
             sourceLanguage: sourceLanguage,
             targetLanguage: targetLanguage,
             subtitleFontSize: subtitleFontSize,
-            subtitleDisplayDuration: subtitleDisplayDuration,
             showOriginalText: showOriginalText
         )
         try? ConfigurationService.shared.saveConfiguration(config)
