@@ -28,10 +28,11 @@ class Transcriber:
         self,
         api_key: str,
         language: str = "ja",
-        on_transcript: Optional[Callable[[str, str], None]] = None,
+        on_transcript: Optional[Callable[..., None]] = None,
         on_interim: Optional[Callable[[str], None]] = None,
-        endpointing_ms: int = 400,
-        utterance_end_ms: int = 1200,
+        endpointing_ms: int = 200,
+        utterance_end_ms: int = 1000,
+        max_buffer_chars: int = 50,
     ):
         """
         初始化轉錄器
@@ -39,10 +40,13 @@ class Transcriber:
         Args:
             api_key: Deepgram API Key
             language: 語言代碼 (預設 "ja" 日語)
-            on_transcript: 轉錄完成回呼 (id: str, text: str) -> None
+            on_transcript: 轉錄完成回呼，支援兩種簽名：
+                           - (id: str, text: str) -> None（無前句資訊）
+                           - (id: str, text: str, prev_id: str|None, prev_text: str|None, prev_translation: str|None) -> None
             on_interim: 即時結果回呼 (text: str) -> None，顯示正在說的話
-            endpointing_ms: 靜音判定時間 (毫秒)，預設 400ms（日語句子較長）
-            utterance_end_ms: utterance 超時時間 (毫秒)，預設 1200ms
+            endpointing_ms: 靜音判定時間 (毫秒)，預設 200ms（減半以縮短延遲）
+            utterance_end_ms: utterance 超時時間 (毫秒)，預設 1000ms（Deepgram 最小值為 1000）
+            max_buffer_chars: 最大累積字數，預設 50（減少 38%）
         """
         self.api_key = api_key
         self.language = language
@@ -58,7 +62,11 @@ class Transcriber:
         self._running = False
         self._start_time: float = 0
         self._utterance_buffer: list[str] = []  # 累積 buffer
-        self._max_buffer_chars: int = 80  # 最大累積字數，超過就強制 flush
+        self._max_buffer_chars: int = max_buffer_chars  # 最大累積字數，超過就強制 flush
+
+        # Phase 2: 追蹤前一句資訊（用於上下文修正）
+        # 格式: (id, text, translation)
+        self._previous_transcript: Optional[tuple[str, str, str]] = None
 
     def start(self) -> None:
         """啟動 Deepgram 連線"""
@@ -202,7 +210,30 @@ class Transcriber:
         if self.on_transcript and full_transcript.strip():
             # 生成 UUID 並傳給回呼
             transcript_id = str(uuid.uuid4())
-            self.on_transcript(transcript_id, full_transcript)
+
+            # Phase 2: 傳遞前一句資訊（若有）
+            if self._previous_transcript:
+                prev_id, prev_text, prev_translation = self._previous_transcript
+                self.on_transcript(
+                    transcript_id, full_transcript,
+                    prev_id, prev_text, prev_translation
+                )
+            else:
+                # 第一句或無前句資訊時
+                self.on_transcript(
+                    transcript_id, full_transcript,
+                    None, None, None
+                )
+
+            # 注意：translation 會由 main.py 回填
+            # 暫時只記錄 id 和 text，translation 設為 None
+            self._previous_transcript = (transcript_id, full_transcript, None)
+
+    def update_previous_translation(self, translation: str) -> None:
+        """更新前一句的翻譯結果（由 main.py 呼叫）"""
+        if self._previous_transcript:
+            prev_id, prev_text, _ = self._previous_transcript
+            self._previous_transcript = (prev_id, prev_text, translation)
 
     def _on_error(self, error) -> None:
         """處理錯誤"""

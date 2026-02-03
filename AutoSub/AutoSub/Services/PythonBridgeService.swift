@@ -97,6 +97,9 @@ class PythonBridgeService: ObservableObject {
     /// Interim 回呼（text）- 正在說的話
     var onInterim: ((String) -> Void)?
 
+    /// Phase 2: 翻譯更新回呼（id, translation）- 前句翻譯被修正
+    var onTranslationUpdate: ((UUID, String) -> Void)?
+
     /// 錯誤回呼
     var onError: ((String) -> Void)?
 
@@ -173,13 +176,17 @@ class PythonBridgeService: ObservableObject {
         process?.arguments = [mainPyPath.path]
         process?.currentDirectoryURL = backendPath
 
-        // 4. 設定環境變數（傳遞 API Keys）
+        // 4. 設定環境變數（傳遞 API Keys 和 Deepgram 參數）
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"  // 防止 stdout 緩衝導致阻塞
         env["DEEPGRAM_API_KEY"] = config.deepgramApiKey
         env["GEMINI_API_KEY"] = config.geminiApiKey
         env["SOURCE_LANGUAGE"] = config.sourceLanguage
         env["TARGET_LANGUAGE"] = config.targetLanguage
+        // Phase 1: Deepgram 斷句參數
+        env["DEEPGRAM_ENDPOINTING_MS"] = String(config.deepgramEndpointingMs)
+        env["DEEPGRAM_UTTERANCE_END_MS"] = String(config.deepgramUtteranceEndMs)
+        env["DEEPGRAM_MAX_BUFFER_CHARS"] = String(config.deepgramMaxBufferChars)
         process?.environment = env
 
         // 5. 連接管道
@@ -331,6 +338,15 @@ class PythonBridgeService: ObservableObject {
             case "error":
                 if let message = json["message"] as? String {
                     self.onError?(message)
+                }
+
+            case "translation_update":
+                // Phase 2: 處理前句翻譯修正
+                if let idString = json["id"] as? String,
+                   let id = UUID(uuidString: idString),
+                   let translation = json["translation"] as? String {
+                    print("[PythonBridge] Translation update received - id: \(idString), translation: \(translation)")
+                    self.onTranslationUpdate?(id, translation)
                 }
 
             default:

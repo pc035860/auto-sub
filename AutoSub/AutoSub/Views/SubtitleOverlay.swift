@@ -120,7 +120,8 @@ struct SubtitleRow: View {
             if let translation = entry.translatedText {
                 Text(translation)
                     .font(.system(size: appState.subtitleFontSize))
-                    .foregroundColor(.white)
+                    // Phase 2: 被修正過的翻譯用淺綠色顯示
+                    .foregroundColor(entry.wasRevised ? .mint : .white)
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
             } else {

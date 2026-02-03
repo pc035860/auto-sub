@@ -123,7 +123,7 @@ struct MenuBarView: View {
         let state = appState
 
         do {
-            // 1. 建立設定
+            // 1. 建立設定（使用 Configuration 的預設 Deepgram 參數）
             let config = Configuration(
                 deepgramApiKey: state.deepgramApiKey,
                 geminiApiKey: state.geminiApiKey,
@@ -132,6 +132,8 @@ struct MenuBarView: View {
                 subtitleFontSize: state.subtitleFontSize,
                 subtitleDisplayDuration: state.subtitleDisplayDuration,
                 showOriginalText: state.showOriginalText
+                // Deepgram 參數使用 Configuration 的預設值（200ms, 800ms, 50 chars）
+                // 未來若需 UI 可調，可從 AppState 傳入
             )
 
             // 2. 先設定錯誤回呼（在啟動前）
@@ -169,6 +171,14 @@ struct MenuBarView: View {
                     state?.updateInterim(text)
                 }
             }
+            // Phase 2: translation_update 回呼（前句翻譯被修正）
+            bridge.onTranslationUpdate = { [weak state] id, translation in
+                print("[MenuBarView] onTranslationUpdate callback received: id=\(id), translation=\(translation)")
+                Task { @MainActor in
+                    // wasRevised = true 表示這是上下文修正
+                    state?.updateTranslation(id: id, translation: translation, wasRevised: true)
+                }
+            }
             bridge.onStatusChange = { status in
                 print("[MenuBarView] Python status: \(status)")
             }
@@ -200,6 +210,7 @@ struct MenuBarView: View {
             bridge.onTranscript = nil
             bridge.onSubtitle = nil
             bridge.onInterim = nil
+            bridge.onTranslationUpdate = nil
             bridge.onError = nil
             bridge.onStatusChange = nil
 
@@ -222,6 +233,7 @@ struct MenuBarView: View {
         pythonBridge?.onTranscript = nil
         pythonBridge?.onSubtitle = nil
         pythonBridge?.onInterim = nil
+        pythonBridge?.onTranslationUpdate = nil
         pythonBridge?.onError = nil
         pythonBridge?.onStatusChange = nil
 

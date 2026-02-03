@@ -88,11 +88,19 @@ class AppState: ObservableObject {
     }
 
     /// 更新字幕翻譯
-    func updateTranslation(id: UUID, translation: String) {
+    /// - Parameters:
+    ///   - id: 字幕 ID
+    ///   - translation: 翻譯文字
+    ///   - wasRevised: 是否為上下文修正（Phase 2）
+    func updateTranslation(id: UUID, translation: String, wasRevised: Bool = false) {
         if let index = subtitleHistory.firstIndex(where: { $0.id == id }) {
             // 修復：建立新的 entry 並重新賦值，確保觸發 @Published
             var updatedEntry = subtitleHistory[index]
             updatedEntry.translatedText = translation
+            // Phase 2: 若是修正，設定 wasRevised 標記
+            if wasRevised {
+                updatedEntry.wasRevised = true
+            }
             subtitleHistory[index] = updatedEntry
 
             // 若是最新的，也更新 currentSubtitle

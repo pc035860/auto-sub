@@ -39,15 +39,16 @@ def main():
     gemini_key = os.environ.get("GEMINI_API_KEY")
     source_lang = os.environ.get("SOURCE_LANGUAGE", "ja")
 
-    # 新增：Deepgram 斷句設定（有預設值）
-    endpointing_ms = int(os.environ.get("DEEPGRAM_ENDPOINTING_MS", "400"))
-    utterance_end_ms = int(os.environ.get("DEEPGRAM_UTTERANCE_END_MS", "1200"))
+    # Deepgram 斷句設定（Phase 1 調整後的新預設值）
+    endpointing_ms = int(os.environ.get("DEEPGRAM_ENDPOINTING_MS", "200"))
+    utterance_end_ms = int(os.environ.get("DEEPGRAM_UTTERANCE_END_MS", "1000"))
+    max_buffer_chars = int(os.environ.get("DEEPGRAM_MAX_BUFFER_CHARS", "50"))
 
     # 新增：Gemini Context 設定（有預設值）
     max_context_tokens = int(os.environ.get("GEMINI_MAX_CONTEXT_TOKENS", "100000"))
 
     print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
-    print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}", file=sys.stderr, flush=True)
+    print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}, max_buffer_chars={max_buffer_chars}", file=sys.stderr, flush=True)
     print(f"[Python] Gemini config: max_context_tokens={max_context_tokens}", file=sys.stderr, flush=True)
 
     if not deepgram_key or not gemini_key:
@@ -73,9 +74,20 @@ def main():
             "text": text
         })
 
-    # 翻譯回呼（含重試）
-    def on_transcript(transcript_id: str, text: str):
+    # 儲存 transcriber 參考（用於更新前句翻譯）
+    transcriber_ref = [None]
+
+    # Phase 2: 翻譯回呼（支援上下文修正）
+    def on_transcript(
+        transcript_id: str,
+        text: str,
+        prev_id: str | None = None,
+        prev_text: str | None = None,
+        prev_translation: str | None = None
+    ):
         print(f"[Python] on_transcript called with id={transcript_id}, text={text}", file=sys.stderr, flush=True)
+        if prev_id:
+            print(f"[Python] Previous context: prev_id={prev_id}, prev_text={prev_text}, prev_translation={prev_translation}", file=sys.stderr, flush=True)
 
         # 1. 立即送出原文（翻譯中狀態）
         output_json({
@@ -85,31 +97,71 @@ def main():
         })
         print(f"[Python] Transcript sent to stdout!", file=sys.stderr, flush=True)
 
-        # 2. 進行翻譯
+        # 2. 進行翻譯（帶上下文修正）
         max_retries = 3
+        translation_success = False
+
         for attempt in range(max_retries):
             try:
-                print(f"[Python] Translating (attempt {attempt + 1})...", file=sys.stderr, flush=True)
-                translated = translator.translate(text)
-                print(f"[Python] Translation result: {translated}", file=sys.stderr, flush=True)
-                if translated:
-                    # 3. 送出翻譯結果
+                print(f"[Python] Translating with context (attempt {attempt + 1})...", file=sys.stderr, flush=True)
+
+                # 使用上下文修正翻譯
+                current_trans, prev_correction = translator.translate_with_context_correction(
+                    text, prev_text, prev_translation
+                )
+
+                print(f"[Python] Translation result: current={current_trans}, correction={prev_correction}", file=sys.stderr, flush=True)
+
+                # 確保 current_trans 是有效字串
+                if current_trans and isinstance(current_trans, str) and current_trans.strip():
+                    # 3. 送出當前翻譯結果
                     output_json({
                         "type": "subtitle",
                         "id": transcript_id,
                         "original": text,
-                        "translation": translated
+                        "translation": current_trans
                     })
                     print(f"[Python] Subtitle sent to stdout!", file=sys.stderr, flush=True)
+
+                    # 4. 若有前句修正，送出更新
+                    if prev_correction and prev_id:
+                        output_json({
+                            "type": "translation_update",
+                            "id": prev_id,
+                            "translation": prev_correction
+                        })
+                        print(f"[Python] Translation update sent for prev_id={prev_id}!", file=sys.stderr, flush=True)
+
+                    # 5. 更新 transcriber 的前句翻譯記錄
+                    if transcriber_ref[0]:
+                        transcriber_ref[0].update_previous_translation(current_trans)
+
+                    translation_success = True
                     return
+                else:
+                    # 翻譯結果為空或無效，視為需要重試
+                    print(f"[Python] Empty or invalid translation result, retrying...", file=sys.stderr, flush=True)
+                    continue
+
             except Exception as e:
                 print(f"[Python] Translation error: {e}", file=sys.stderr, flush=True)
-                if attempt == max_retries - 1:
-                    output_json({
-                        "type": "error",
-                        "message": "Translation failed",
-                        "code": "TRANSLATE_ERROR"
-                    })
+
+        # 重試結束仍未成功，送出失敗字幕（帶 id 讓 UI 不會卡在「翻譯中…」）
+        if not translation_success:
+            print(f"[Python] Translation failed after {max_retries} attempts", file=sys.stderr, flush=True)
+            # 送出帶 id 的失敗字幕，讓 UI 可以更新該條目
+            output_json({
+                "type": "subtitle",
+                "id": transcript_id,
+                "original": text,
+                "translation": "[翻譯失敗]"
+            })
+            # 同時送出錯誤通知
+            output_json({
+                "type": "error",
+                "message": "Translation failed",
+                "code": "TRANSLATE_ERROR"
+            })
 
     # 初始化轉錄器並開始處理
     print("[Python] Initializing transcriber...", file=sys.stderr, flush=True)
@@ -121,7 +173,10 @@ def main():
             on_interim=on_interim,
             endpointing_ms=endpointing_ms,
             utterance_end_ms=utterance_end_ms,
+            max_buffer_chars=max_buffer_chars,
         ) as transcriber:
+            # 儲存 transcriber 參考
+            transcriber_ref[0] = transcriber
             print("[Python] Transcriber connected!", file=sys.stderr, flush=True)
             output_json({"type": "status", "status": "connected"})
             print("[Python] Now reading audio from stdin...", file=sys.stderr, flush=True)
@@ -146,10 +201,13 @@ def main():
                     })
                     break
 
-    except Exception:
+    except Exception as e:
+        print(f"[Python] Deepgram connection error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         output_json({
             "type": "error",
-            "message": "Failed to connect to speech service",
+            "message": f"Failed to connect to speech service: {e}",
             "code": "DEEPGRAM_ERROR"
         })
         sys.exit(1)
