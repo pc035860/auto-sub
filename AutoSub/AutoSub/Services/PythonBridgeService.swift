@@ -182,6 +182,7 @@ class PythonBridgeService: ObservableObject {
         env["DEEPGRAM_API_KEY"] = config.deepgramApiKey
         env["GEMINI_API_KEY"] = config.geminiApiKey
         env["GEMINI_MODEL"] = config.geminiModel
+        env["GEMINI_MAX_CONTEXT_TOKENS"] = String(config.geminiMaxContextTokens)
         env["SOURCE_LANGUAGE"] = config.sourceLanguage
         env["TARGET_LANGUAGE"] = config.targetLanguage
         // Phase 1: Deepgram 斷句參數

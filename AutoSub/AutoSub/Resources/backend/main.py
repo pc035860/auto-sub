@@ -47,7 +47,7 @@ def main():
     max_buffer_chars = int(os.environ.get("DEEPGRAM_MAX_BUFFER_CHARS", "50"))
 
     # 新增：Gemini Context 設定（有預設值）
-    max_context_tokens = int(os.environ.get("GEMINI_MAX_CONTEXT_TOKENS", "100000"))
+    max_context_tokens = int(os.environ.get("GEMINI_MAX_CONTEXT_TOKENS", "20000"))
 
     print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
     print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}, max_buffer_chars={max_buffer_chars}", file=sys.stderr, flush=True)

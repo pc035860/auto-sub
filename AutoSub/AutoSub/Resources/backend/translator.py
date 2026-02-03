@@ -89,7 +89,7 @@ class Translator:
         model: str = "gemini-2.5-flash-lite-preview-09-2025",
         source_language: str = "ja",
         target_language: str = "zh-TW",
-        max_context_tokens: int = 100_000,
+        max_context_tokens: int = 20_000,
     ):
         """
         初始化翻譯器
@@ -99,7 +99,7 @@ class Translator:
             model: 模型名稱 (預設 gemini-2.5-flash-lite-preview-09-2025)
             source_language: 原文語言
             target_language: 翻譯目標語言
-            max_context_tokens: 最大 context tokens 閾值 (預設 100K)
+            max_context_tokens: 最大 context tokens 閾值 (預設 20K)
         """
         self.client = genai.Client(api_key=api_key)
         self.model = model

@@ -29,6 +29,15 @@ class AppState: ObservableObject {
     @Published var deepgramApiKey: String = ""
     @Published var geminiApiKey: String = ""
     @Published var geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025"
+    @Published var geminiMaxContextTokens: Int = 20_000 {
+        didSet {
+            if geminiMaxContextTokens < 10_000 {
+                geminiMaxContextTokens = 10_000
+            } else if geminiMaxContextTokens > 100_000 {
+                geminiMaxContextTokens = 100_000
+            }
+        }
+    }
     @Published var sourceLanguage: String = "ja"
     @Published var targetLanguage: String = "zh-TW"
 
@@ -169,6 +178,7 @@ class AppState: ObservableObject {
             deepgramApiKey: deepgramApiKey,
             geminiApiKey: geminiApiKey,
             geminiModel: geminiModel,
+            geminiMaxContextTokens: geminiMaxContextTokens,
             sourceLanguage: sourceLanguage,
             targetLanguage: targetLanguage,
             subtitleFontSize: subtitleFontSize,

@@ -266,6 +266,18 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 }
 
+// MARK: - ScreenStreamOutput
+
+/// SCStreamOutput delegate（影像幀忽略用）
+final class ScreenStreamOutput: NSObject, SCStreamOutput {
+    func stream(_ stream: SCStream,
+                didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+                of outputType: SCStreamOutputType) {
+        // 只要註冊 output 即可，影像幀直接忽略
+        guard outputType == .screen else { return }
+    }
+}
+
 // MARK: - AudioCaptureService
 
 /// 音訊擷取服務
@@ -298,6 +310,7 @@ class AudioCaptureService: NSObject, ObservableObject {
     // 私有屬性
     private var stream: SCStream?
     private var streamOutput: AudioStreamOutput?
+    private var screenStreamOutput: ScreenStreamOutput?
     private var audioProcessingQueue: DispatchQueue?
 
     // 靜音檢測
@@ -386,6 +399,13 @@ class AudioCaptureService: NSObject, ObservableObject {
                 type: .audio,
                 sampleHandlerQueue: audioProcessingQueue!
             )
+            // 註冊 screen output，避免系統丟棄影像幀時出錯
+            screenStreamOutput = ScreenStreamOutput()
+            try stream.addStreamOutput(
+                screenStreamOutput!,
+                type: .screen,
+                sampleHandlerQueue: audioProcessingQueue!
+            )
         } catch {
             audioProcessingQueue = nil
             throw AudioCaptureError.streamFailed(error)
@@ -412,6 +432,7 @@ class AudioCaptureService: NSObject, ObservableObject {
 
         self.stream = nil
         self.streamOutput = nil
+        self.screenStreamOutput = nil
         self.audioProcessingQueue = nil
         isCapturing = false
         hasAudioActivity = false

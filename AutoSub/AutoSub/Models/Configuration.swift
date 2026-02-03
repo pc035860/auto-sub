@@ -12,6 +12,7 @@ struct Configuration: Codable {
     var deepgramApiKey: String
     var geminiApiKey: String
     var geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025"
+    var geminiMaxContextTokens: Int = 20_000
     var sourceLanguage: String = "ja"
     var targetLanguage: String = "zh-TW"
     var subtitleFontSize: CGFloat = 24
@@ -34,6 +35,7 @@ struct Configuration: Codable {
         deepgramApiKey: String = "",
         geminiApiKey: String = "",
         geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025",
+        geminiMaxContextTokens: Int = 20_000,
         sourceLanguage: String = "ja",
         targetLanguage: String = "zh-TW",
         subtitleFontSize: CGFloat = 24,
@@ -50,6 +52,7 @@ struct Configuration: Codable {
         self.deepgramApiKey = deepgramApiKey
         self.geminiApiKey = geminiApiKey
         self.geminiModel = geminiModel
+        self.geminiMaxContextTokens = geminiMaxContextTokens
         self.sourceLanguage = sourceLanguage
         self.targetLanguage = targetLanguage
         self.subtitleFontSize = subtitleFontSize
@@ -68,6 +71,7 @@ struct Configuration: Codable {
         case deepgramApiKey
         case geminiApiKey
         case geminiModel
+        case geminiMaxContextTokens
         case sourceLanguage
         case targetLanguage
         case subtitleFontSize
@@ -88,6 +92,7 @@ struct Configuration: Codable {
         deepgramApiKey = try container.decodeIfPresent(String.self, forKey: .deepgramApiKey) ?? ""
         geminiApiKey = try container.decodeIfPresent(String.self, forKey: .geminiApiKey) ?? ""
         geminiModel = try container.decodeIfPresent(String.self, forKey: .geminiModel) ?? "gemini-2.5-flash-lite-preview-09-2025"
+        geminiMaxContextTokens = try container.decodeIfPresent(Int.self, forKey: .geminiMaxContextTokens) ?? 20_000
         sourceLanguage = try container.decodeIfPresent(String.self, forKey: .sourceLanguage) ?? "ja"
         targetLanguage = try container.decodeIfPresent(String.self, forKey: .targetLanguage) ?? "zh-TW"
         subtitleFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleFontSize) ?? 24

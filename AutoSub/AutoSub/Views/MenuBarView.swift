@@ -152,6 +152,7 @@ struct MenuBarView: View {
                 deepgramApiKey: state.deepgramApiKey,
                 geminiApiKey: state.geminiApiKey,
                 geminiModel: state.geminiModel,
+                geminiMaxContextTokens: state.geminiMaxContextTokens,
                 sourceLanguage: state.sourceLanguage,
                 targetLanguage: state.targetLanguage,
                 subtitleFontSize: state.subtitleFontSize,

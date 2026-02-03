@@ -105,6 +105,7 @@ struct AutoSubApp: App {
         appState.deepgramApiKey = config.deepgramApiKey
         appState.geminiApiKey = config.geminiApiKey
         appState.geminiModel = config.geminiModel
+        appState.geminiMaxContextTokens = config.geminiMaxContextTokens
         appState.sourceLanguage = config.sourceLanguage
         appState.targetLanguage = config.targetLanguage
         appState.subtitleFontSize = config.subtitleFontSize

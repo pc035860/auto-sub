@@ -46,6 +46,16 @@ struct APISettingsView: View {
         ("gemini-2.5-flash-preview-09-2025", "2.5 flash"),
         ("gemini-3-flash-preview", "3 flash")
     ]
+    private let contextTokenRange: ClosedRange<Int> = 10_000...100_000
+
+    private var contextTokenBinding: Binding<Double> {
+        Binding(
+            get: { Double(appState.geminiMaxContextTokens) },
+            set: { newValue in
+                appState.geminiMaxContextTokens = Int(newValue)
+            }
+        )
+    }
 
     var body: some View {
         Form {
@@ -97,6 +107,21 @@ struct APISettingsView: View {
                     }
                 }
                 .onChangeCompat(of: appState.geminiModel) {
+                    appState.saveConfiguration()
+                }
+
+                HStack {
+                    Text("自動壓縮上限")
+                    Spacer()
+                    Text("\(appState.geminiMaxContextTokens)")
+                        .foregroundColor(.secondary)
+                }
+                Slider(
+                    value: contextTokenBinding,
+                    in: Double(contextTokenRange.lowerBound)...Double(contextTokenRange.upperBound),
+                    step: 1_000
+                )
+                .onChangeCompat(of: appState.geminiMaxContextTokens) {
                     appState.saveConfiguration()
                 }
             } header: {
