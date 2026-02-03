@@ -23,6 +23,7 @@
 		C4812DECDE72AA3A5AC253AE /* KeyboardShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8891BFE05D44C166F77C20 /* KeyboardShortcuts.swift */; };
 		C4A1F853F1886CA8DBA82595 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 270B2719EA436D73E92DAF76 /* AudioCaptureService.swift */; };
 		D4F11875717B362781834D3A /* SubtitleEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8341B26FDC38A71BDABCD52 /* SubtitleEntry.swift */; };
+		D5FB93C88E2FA9F981292734 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F50D3D325114F009F61C66 /* MenuBarController.swift */; };
 		D7C5DA738B11AFDA8C2E7118 /* SubtitleOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A592E9AEC39965E17B99203 /* SubtitleOverlay.swift */; };
 /* End PBXBuildFile section */
 
@@ -44,6 +45,7 @@
 		9FB55460E99FE0E95C0B1B56 /* AutoSub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AutoSub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B69A292045BA4389325D83D0 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		C8341B26FDC38A71BDABCD52 /* SubtitleEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleEntry.swift; sourceTree = "<group>"; };
+		D3F50D3D325114F009F61C66 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		D7CF494501C29AEFDCAC2B31 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D9783669E84B4444B9D4DC6E /* ConfigurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationService.swift; sourceTree = "<group>"; };
 		DDB74A62A6204281567D0C2A /* SubtitleWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleWindowController.swift; sourceTree = "<group>"; };
@@ -59,6 +61,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		359E0420B63A53366DA71C88 /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				D3F50D3D325114F009F61C66 /* MenuBarController.swift */,
+			);
+			path = MenuBar;
+			sourceTree = "<group>";
+		};
 		5FB9BFFD3F4CCD6262AEC138 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -72,6 +82,7 @@
 				638A496F0EED13914FE83095 /* AutoSub.entitlements */,
 				3312F51BCFDEC5D738DAFF53 /* AutoSubApp.swift */,
 				D7CF494501C29AEFDCAC2B31 /* Info.plist */,
+				359E0420B63A53366DA71C88 /* MenuBar */,
 				95B54F3F39358CBC92618843 /* Models */,
 				5FB9BFFD3F4CCD6262AEC138 /* Resources */,
 				90F7AB2BF565FF1BEBB3492C /* Services */,
@@ -204,6 +215,7 @@
 				665BC7067D9C3657DDB4CEE8 /* Configuration.swift in Sources */,
 				44CCC8AA6D76FA3E2046EDE4 /* ConfigurationService.swift in Sources */,
 				C4812DECDE72AA3A5AC253AE /* KeyboardShortcuts.swift in Sources */,
+				D5FB93C88E2FA9F981292734 /* MenuBarController.swift in Sources */,
 				7DF54ADDEA09A5224E2F9F19 /* MenuBarView.swift in Sources */,
 				66C4BB04A2230498126E812A /* NotificationNames.swift in Sources */,
 				09410AB1A7539EB1105270A9 /* OnboardingView.swift in Sources */,

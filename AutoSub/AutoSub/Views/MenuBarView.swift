@@ -14,92 +14,102 @@ struct MenuBarView: View {
     @Environment(\.subtitleWindowController) var subtitleWindowController: SubtitleWindowController?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // 狀態顯示
-            HStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
+        Group {
+            statusItem
+            Divider()
+            profileMenu
+            captureItem
+            Divider()
+            settingsItem
+            subtitleLockItem
+            resetSubtitleItem
+            Divider()
+            quitItem
+        }
+    }
+
+    private var statusItem: some View {
+        Button(action: {}) {
+            Label {
                 Text(statusText)
-            }
-            .padding(.horizontal)
-
-            Divider()
-
-            // Profile 切換
-            Menu {
-                ForEach(appState.profiles) { profile in
-                    Button {
-                        appState.selectProfile(id: profile.id)
-                    } label: {
-                        if profile.id == appState.selectedProfileId {
-                            Label(profile.displayName, systemImage: "checkmark")
-                        } else {
-                            Text(profile.displayName)
-                        }
-                    }
-                }
-            } label: {
-                Label("Profile：\(appState.currentProfile.displayName)", systemImage: "person.text.rectangle")
-            }
-            .disabled(appState.isCapturing)
-
-            Divider()
-
-            // 開始/停止按鈕
-            Button(action: toggleCapture) {
-                Label(
-                    appState.isCapturing ? "停止擷取" : "開始擷取",
-                    systemImage: appState.isCapturing ? "stop.fill" : "play.fill"
-                )
-            }
-            .disabled(!appState.isReady)
-
-            Divider()
-
-            // 設定
-            if #available(macOS 14.0, *) {
-                SettingsLink {
-                    Label("設定...", systemImage: "gear")
-                }
-                .simultaneousGesture(TapGesture().onEnded {
-                    bringSettingsToFront()
-                })
-            } else {
-                Button {
-                    openSettings()
-                } label: {
-                    Label("設定...", systemImage: "gear")
-                }
-            }
-
-            Divider()
-
-            // 字幕位置控制
-            Toggle(isOn: $appState.isSubtitleLocked) {
-                Label("鎖定字幕位置", systemImage: appState.isSubtitleLocked ? "lock.fill" : "lock.open")
-            }
-            .onChangeCompat(of: appState.isSubtitleLocked) {
-                subtitleWindowController?.updateMouseEventHandling()
-                appState.saveSubtitlePosition()
-            }
-
-            Button {
-                appState.resetSubtitlePosition()
-                subtitleWindowController?.resetPosition()
-            } label: {
-                Label("重設字幕位置", systemImage: "arrow.counterclockwise")
-            }
-
-            Divider()
-
-            // 結束
-            Button("結束 Auto-Sub") {
-                NSApplication.shared.terminate(nil)
+            } icon: {
+                Image(systemName: "circle.fill")
+                    .foregroundStyle(statusColor)
             }
         }
-        .padding(.vertical, 8)
-        .frame(width: 200)
+        .disabled(true)
+    }
+
+    private var profileMenu: some View {
+        Menu {
+            ForEach(appState.profiles) { profile in
+                Button {
+                    appState.selectProfile(id: profile.id)
+                } label: {
+                    if profile.id == appState.selectedProfileId {
+                        Label(profile.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(profile.displayName)
+                    }
+                }
+            }
+        } label: {
+            Label("Profile：\(appState.currentProfile.displayName)", systemImage: "person.text.rectangle")
+        }
+        .disabled(appState.isCapturing)
+    }
+
+    private var captureItem: some View {
+        Button(action: toggleCapture) {
+            Label(
+                appState.isCapturing ? "停止擷取" : "開始擷取",
+                systemImage: appState.isCapturing ? "stop.fill" : "play.fill"
+            )
+        }
+        .disabled(!appState.isReady)
+    }
+
+    @ViewBuilder
+    private var settingsItem: some View {
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                Label("設定...", systemImage: "gear")
+            }
+            .simultaneousGesture(TapGesture().onEnded {
+                bringSettingsToFront()
+            })
+        } else {
+            Button {
+                openSettings()
+            } label: {
+                Label("設定...", systemImage: "gear")
+            }
+        }
+    }
+
+    private var subtitleLockItem: some View {
+        Toggle(isOn: $appState.isSubtitleLocked) {
+            Label("鎖定字幕位置", systemImage: appState.isSubtitleLocked ? "lock.fill" : "lock.open")
+        }
+        .onChangeCompat(of: appState.isSubtitleLocked) {
+            subtitleWindowController?.updateMouseEventHandling()
+            appState.saveSubtitlePosition()
+        }
+    }
+
+    private var resetSubtitleItem: some View {
+        Button {
+            appState.resetSubtitlePosition()
+            subtitleWindowController?.resetPosition()
+        } label: {
+            Label("重設字幕位置", systemImage: "arrow.counterclockwise")
+        }
+    }
+
+    private var quitItem: some View {
+        Button("結束 Auto-Sub") {
+            NSApplication.shared.terminate(nil)
+        }
     }
 
     private var statusColor: Color {
