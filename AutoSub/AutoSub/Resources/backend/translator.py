@@ -10,6 +10,12 @@ import sys
 from typing import Optional, Tuple
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
+
+
+class TranslationResult(BaseModel):
+    current: str
+    correction: Optional[str] = None
 
 
 SYSTEM_INSTRUCTION = """你是專業的日文即時字幕翻譯員。請將日文翻譯成繁體中文。
@@ -43,8 +49,7 @@ CONTEXT_CORRECTION_PROMPT = """翻譯以下日文句子，並根據上下文判�
 前句原文：「{prev_text}」
 前句翻譯：「{prev_translation}」
 
-請輸出 JSON 格式（只輸出 JSON，不要其他文字）：
-{{"current": "當前句子的翻譯", "correction": "前句修正後的翻譯" 或 null}}
+翻譯結果放入 "current"，若需修正前句翻譯則填入 "correction"，否則設為 null。
 
 修正時機：
 - 發現前句翻譯有誤譯或語意不通
@@ -57,8 +62,7 @@ SIMPLE_TRANSLATE_PROMPT = """翻譯以下日文句子：
 
 「{text}」
 
-請輸出 JSON 格式（只輸出 JSON，不要其他文字）：
-{{"current": "翻譯結果", "correction": null}}"""
+翻譯結果放入 "current"，correction 設為 null。"""
 
 
 class Translator:
@@ -83,6 +87,13 @@ class Translator:
         self.max_context_tokens = max_context_tokens
 
         self._config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            temperature=0.2,
+            response_mime_type="application/json",
+            response_schema=TranslationResult,
+        )
+        # Summarization 用的 plain text config（不帶 JSON schema）
+        self._plain_config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             temperature=0.2,
         )
@@ -131,7 +142,15 @@ class Translator:
                       file=sys.stderr, flush=True)
                 self._summarize_and_rebuild()
 
-            return response.text.strip()
+            # Chat 全面 JSON mode，解析回應取 current 欄位
+            response_text = response.text.strip()
+            try:
+                result = json.loads(response_text)
+                return result.get("current", "")
+            except json.JSONDecodeError:
+                print(f"[Translator] JSON parse error in translate(), using fallback",
+                      file=sys.stderr, flush=True)
+                return self._fallback_translate(text)
 
         except Exception as e:
             print(f"[Translator] Error: {e}, rebuilding session...", file=sys.stderr, flush=True)
@@ -143,11 +162,22 @@ class Translator:
         print(f"[Translator] === Starting context rebuild (tokens: {self._total_tokens}) ===",
               file=sys.stderr, flush=True)
 
-        # Step 1: 請求摘要（用即將被丟棄的 session）
-        print("[Translator] Step 1: Requesting summary from current session...",
+        # Step 1: 用 generate_content() + chat history 做摘要（不經過 JSON mode chat）
+        print("[Translator] Step 1: Requesting summary via generate_content...",
               file=sys.stderr, flush=True)
         try:
-            summary_response = self._chat.send_message(SUMMARIZE_PROMPT)
+            history = self._chat.get_history()
+            summary_contents = list(history) + [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=SUMMARIZE_PROMPT)]
+                )
+            ]
+            summary_response = self.client.models.generate_content(
+                model=self.model,
+                contents=summary_contents,
+                config=self._plain_config,  # 無 JSON schema，自由格式文字
+            )
             self._context_summary = summary_response.text.strip()
             print(f"[Translator] Summary received ({len(self._context_summary)} chars):\n"
                   f"---\n{self._context_summary}\n---", file=sys.stderr, flush=True)
@@ -155,7 +185,7 @@ class Translator:
             print(f"[Translator] Summarization failed: {e}", file=sys.stderr, flush=True)
             self._context_summary = ""
 
-        # Step 2: 重建 session
+        # Step 2: 重建 session（自動帶 JSON mode config）
         print("[Translator] Step 2: Creating new session...", file=sys.stderr, flush=True)
         self._chat = self.client.chats.create(
             model=self.model,
@@ -164,7 +194,7 @@ class Translator:
         self._total_tokens = 0
         print("[Translator] New session created, tokens reset to 0", file=sys.stderr, flush=True)
 
-        # Step 3: 帶入摘要作為上下文
+        # Step 3: 帶入摘要作為上下文（handover 回應是 JSON，忽略即可）
         if self._context_summary:
             print("[Translator] Step 3: Handing over context to new session...",
                   file=sys.stderr, flush=True)
@@ -258,41 +288,17 @@ class Translator:
                       file=sys.stderr, flush=True)
                 self._summarize_and_rebuild()
 
-            # 解析 JSON 回應
+            # 解析 JSON 回應（structured output 保證合法 JSON）
             response_text = response.text.strip()
             print(f"[Translator] Raw response: {response_text}", file=sys.stderr, flush=True)
 
-            # 嘗試解析 JSON（處理可能的 markdown code block）
-            json_text = response_text.strip()
-            # 更寬鬆地去除 markdown code block（處理 ```json、空白、不完整結尾等）
-            if json_text.startswith("```"):
-                lines = json_text.split("\n")
-                # 移除第一行（```json 或 ```）
-                lines = lines[1:]
-                # 移除最後一行如果是 ``` 或空白
-                while lines and lines[-1].strip() in ("```", ""):
-                    lines.pop()
-                json_text = "\n".join(lines).strip()
-
             try:
-                result = json.loads(json_text)
+                result = json.loads(response_text)
                 current_trans = result.get("current", "")
                 correction = result.get("correction")
 
-                # 正規化 current_trans：確保是字串
-                if not isinstance(current_trans, str):
-                    print(f"[Translator] current_trans is not string: {type(current_trans)}, converting",
-                          file=sys.stderr, flush=True)
-                    current_trans = str(current_trans) if current_trans else ""
-
-                # 正規化 correction：None、空字串、全空白、"null"、"None" 都視為無修正
-                if correction is None:
-                    pass  # 已經是 None
-                elif not isinstance(correction, str):
-                    # 非字串型別視為無修正
-                    correction = None
-                elif correction.strip() in ("", "null", "None"):
-                    # 空字串、全空白、"null"、"None" 視為無修正
+                # 空字串視為無修正
+                if isinstance(correction, str) and correction.strip() == "":
                     correction = None
 
                 print(f"[Translator] Parsed - current: {current_trans}, correction: {correction}",
@@ -303,7 +309,6 @@ class Translator:
             except json.JSONDecodeError as e:
                 print(f"[Translator] JSON parse error: {e}, using fallback",
                       file=sys.stderr, flush=True)
-                # JSON 解析失敗，使用 fallback 翻譯而非原始回應
                 fallback = self._fallback_translate(current_text)
                 return (fallback, None)
 
