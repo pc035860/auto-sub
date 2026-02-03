@@ -33,6 +33,7 @@ struct AutoSubApp: App {
                 .environmentObject(appState)
                 .environmentObject(audioService)
                 .environment(\.pythonBridge, pythonBridge)
+                .environment(\.subtitleWindowController, subtitleWindowController)
                 .task {
                     await performInitializationOnce()
                 }
@@ -76,11 +77,17 @@ struct AutoSubApp: App {
         // 1. 載入設定
         loadConfiguration()
 
-        // 2. 註冊全域快捷鍵
+        // 2. 設定字幕視窗控制器
+        subtitleWindowController.configure(appState: appState)
+
+        // 3. 註冊全域快捷鍵
         setupKeyboardShortcuts()
 
-        // 3. 監聽字幕變化
+        // 4. 監聯字幕變化
         setupSubtitleObserver()
+
+        // 5. 監聽字幕鎖定狀態變更
+        setupLockStateObserver()
 
         print("[AutoSubApp] Initialization completed")
     }
@@ -91,10 +98,10 @@ struct AutoSubApp: App {
         let config = ConfigurationService.shared.loadConfiguration()
         appState.deepgramApiKey = config.deepgramApiKey
         appState.geminiApiKey = config.geminiApiKey
+        appState.geminiModel = config.geminiModel
         appState.sourceLanguage = config.sourceLanguage
         appState.targetLanguage = config.targetLanguage
         appState.subtitleFontSize = config.subtitleFontSize
-        appState.subtitleDisplayDuration = config.subtitleDisplayDuration
         appState.showOriginalText = config.showOriginalText
     }
 
@@ -155,6 +162,20 @@ struct AutoSubApp: App {
         subtitleWindowController.show(content: overlay)
     }
 
+    /// 監聽字幕鎖定狀態變更
+    @MainActor
+    private func setupLockStateObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .subtitleLockStateChanged,
+            object: nil,
+            queue: .main
+        ) { [subtitleWindowController] _ in
+            Task { @MainActor in
+                subtitleWindowController.updateMouseEventHandling()
+            }
+        }
+    }
+
     /// Combine cancellables
     @State private var cancellables = Set<AnyCancellable>()
 }
@@ -169,5 +190,18 @@ extension EnvironmentValues {
     var pythonBridge: PythonBridgeService? {
         get { self[PythonBridgeKey.self] }
         set { self[PythonBridgeKey.self] = newValue }
+    }
+}
+
+// MARK: - Environment Key for SubtitleWindowController
+
+private struct SubtitleWindowControllerKey: EnvironmentKey {
+    static let defaultValue: SubtitleWindowController? = nil
+}
+
+extension EnvironmentValues {
+    var subtitleWindowController: SubtitleWindowController? {
+        get { self[SubtitleWindowControllerKey.self] }
+        set { self[SubtitleWindowControllerKey.self] = newValue }
     }
 }

@@ -45,10 +45,3 @@ final class KeyboardShortcuts {
         }
     }
 }
-
-// MARK: - Notification Names
-
-extension Notification.Name {
-    static let toggleCapture = Notification.Name("AutoSub.toggleCapture")
-    static let toggleSubtitle = Notification.Name("AutoSub.toggleSubtitle")
-}

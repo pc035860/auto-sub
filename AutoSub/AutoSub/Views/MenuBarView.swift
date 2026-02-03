@@ -11,6 +11,7 @@ struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var audioService: AudioCaptureService
     @Environment(\.pythonBridge) var pythonBridge: PythonBridgeService?
+    @Environment(\.subtitleWindowController) var subtitleWindowController: SubtitleWindowController?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -41,12 +42,33 @@ struct MenuBarView: View {
                 SettingsLink {
                     Label("設定...", systemImage: "gear")
                 }
+                .simultaneousGesture(TapGesture().onEnded {
+                    bringSettingsToFront()
+                })
             } else {
                 Button {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    openSettings()
                 } label: {
                     Label("設定...", systemImage: "gear")
                 }
+            }
+
+            Divider()
+
+            // 字幕位置控制
+            Toggle(isOn: $appState.isSubtitleLocked) {
+                Label("鎖定字幕位置", systemImage: appState.isSubtitleLocked ? "lock.fill" : "lock.open")
+            }
+            .onChangeCompat(of: appState.isSubtitleLocked) {
+                subtitleWindowController?.updateMouseEventHandling()
+                appState.saveSubtitlePosition()
+            }
+
+            Button {
+                appState.resetSubtitlePosition()
+                subtitleWindowController?.resetPosition()
+            } label: {
+                Label("重設字幕位置", systemImage: "arrow.counterclockwise")
             }
 
             Divider()
@@ -88,6 +110,21 @@ struct MenuBarView: View {
         }
     }
 
+    private func openSettings() {
+        // 顯示設定視窗後，強制啟用並把視窗帶到前景
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        bringSettingsToFront()
+    }
+
+    private func bringSettingsToFront() {
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
     private func startCapture() async {
         print("[MenuBarView] startCapture called")
         print("[MenuBarView] pythonBridge is \(pythonBridge == nil ? "nil" : "available")")
@@ -104,15 +141,17 @@ struct MenuBarView: View {
         let state = appState
 
         do {
-            // 1. 建立設定
+            // 1. 建立設定（使用 Configuration 的預設 Deepgram 參數）
             let config = Configuration(
                 deepgramApiKey: state.deepgramApiKey,
                 geminiApiKey: state.geminiApiKey,
+                geminiModel: state.geminiModel,
                 sourceLanguage: state.sourceLanguage,
                 targetLanguage: state.targetLanguage,
                 subtitleFontSize: state.subtitleFontSize,
-                subtitleDisplayDuration: state.subtitleDisplayDuration,
                 showOriginalText: state.showOriginalText
+                // Deepgram 參數使用 Configuration 的預設值（200ms, 800ms, 50 chars）
+                // 未來若需 UI 可調，可從 AppState 傳入
             )
 
             // 2. 先設定錯誤回呼（在啟動前）
@@ -130,12 +169,32 @@ struct MenuBarView: View {
             }
 
             // 3. 設定 Python Bridge 回呼
-            bridge.onSubtitle = { [weak state] subtitle in
-                print("[MenuBarView] onSubtitle callback received: \(subtitle.translatedText)")
+            // 新增：transcript 回呼（顯示原文，翻譯中狀態）
+            bridge.onTranscript = { [weak state] id, text in
+                print("[MenuBarView] onTranscript callback received: id=\(id), text=\(text)")
                 Task { @MainActor in
-                    print("[MenuBarView] Setting currentSubtitle...")
-                    state?.currentSubtitle = subtitle
-                    print("[MenuBarView] currentSubtitle set, isCapturing: \(state?.isCapturing ?? false)")
+                    state?.addTranscript(id: id, text: text)
+                }
+            }
+            // 修改：subtitle 回呼（更新翻譯結果）
+            bridge.onSubtitle = { [weak state] subtitle in
+                print("[MenuBarView] onSubtitle callback received: id=\(subtitle.id), translation=\(subtitle.translatedText ?? "nil")")
+                Task { @MainActor in
+                    state?.updateTranslation(id: subtitle.id, translation: subtitle.translatedText ?? "")
+                }
+            }
+            // 新增：interim 回呼（正在說的話）
+            bridge.onInterim = { [weak state] text in
+                Task { @MainActor in
+                    state?.updateInterim(text)
+                }
+            }
+            // Phase 2: translation_update 回呼（前句翻譯被修正）
+            bridge.onTranslationUpdate = { [weak state] id, translation in
+                print("[MenuBarView] onTranslationUpdate callback received: id=\(id), translation=\(translation)")
+                Task { @MainActor in
+                    // wasRevised = true 表示這是上下文修正
+                    state?.updateTranslation(id: id, translation: translation, wasRevised: true)
                 }
             }
             bridge.onStatusChange = { status in
@@ -166,12 +225,16 @@ struct MenuBarView: View {
             // 清理回呼
             audioService.onAudioData = nil
             audioService.onError = nil
+            bridge.onTranscript = nil
             bridge.onSubtitle = nil
+            bridge.onInterim = nil
+            bridge.onTranslationUpdate = nil
             bridge.onError = nil
             bridge.onStatusChange = nil
 
             state.status = .error
             state.errorMessage = error.localizedDescription
+            state.currentInterim = nil
         }
     }
 
@@ -185,7 +248,10 @@ struct MenuBarView: View {
         // 3. 清理回呼
         audioService.onAudioData = nil
         audioService.onError = nil
+        pythonBridge?.onTranscript = nil
         pythonBridge?.onSubtitle = nil
+        pythonBridge?.onInterim = nil
+        pythonBridge?.onTranslationUpdate = nil
         pythonBridge?.onError = nil
         pythonBridge?.onStatusChange = nil
 
@@ -193,5 +259,7 @@ struct MenuBarView: View {
         appState.isCapturing = false
         appState.status = .idle
         appState.currentSubtitle = nil
+        appState.currentInterim = nil
+        appState.subtitleHistory.removeAll()
     }
 }

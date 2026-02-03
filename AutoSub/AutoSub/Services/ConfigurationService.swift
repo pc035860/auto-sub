@@ -120,12 +120,20 @@ final class ConfigurationService {
             config = Configuration()
         }
 
-        // 從 Keychain 讀取 API Keys
-        if let deepgramKey = loadFromKeychain(key: "deepgramApiKey") {
-            config.deepgramApiKey = deepgramKey
+        // API Keys：優先環境變數 → Keychain
+        // 這樣可以透過環境變數避免 Keychain 授權對話框
+        let env = ProcessInfo.processInfo.environment
+
+        if let envDeepgramKey = env["DEEPGRAM_API_KEY"], !envDeepgramKey.isEmpty {
+            config.deepgramApiKey = envDeepgramKey
+        } else if let keychainKey = loadFromKeychain(key: "deepgramApiKey") {
+            config.deepgramApiKey = keychainKey
         }
-        if let geminiKey = loadFromKeychain(key: "geminiApiKey") {
-            config.geminiApiKey = geminiKey
+
+        if let envGeminiKey = env["GEMINI_API_KEY"], !envGeminiKey.isEmpty {
+            config.geminiApiKey = envGeminiKey
+        } else if let keychainKey = loadFromKeychain(key: "geminiApiKey") {
+            config.geminiApiKey = keychainKey
         }
 
         return config

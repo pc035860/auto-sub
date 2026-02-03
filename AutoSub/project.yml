@@ -21,6 +21,11 @@ targets:
       - path: AutoSub
         excludes:
           - "**/.DS_Store"
+          - "Resources/backend"
+          - "Resources/backend/**"
+      - path: AutoSub/Resources/backend
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.autosub.app
