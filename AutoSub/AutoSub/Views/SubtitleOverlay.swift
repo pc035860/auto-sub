@@ -10,6 +10,8 @@ import SwiftUI
 
 struct SubtitleOverlay: View {
     @EnvironmentObject var appState: AppState
+    @State private var isPinnedToBottom: Bool = true
+    @State private var didInitialScroll: Bool = false
 
     /// 歷史字幕的透明度（最舊 → 最新）
     private let opacityLevels: [Double] = [0.3, 0.6, 1.0]
@@ -35,7 +37,7 @@ struct SubtitleOverlay: View {
 
             // 字幕內容（帶捲軸）
             ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: true) {
+                ScrollView(.vertical, showsIndicators: !appState.isSubtitleLocked) {
                     VStack(spacing: 8) {
                         ForEach(Array(appState.subtitleHistory.enumerated()), id: \.element.id) { index, entry in
                             SubtitleRow(entry: entry, showOriginal: appState.showOriginalText)
@@ -48,22 +50,55 @@ struct SubtitleOverlay: View {
                             InterimRow(text: interim)
                                 .id("interim")
                         }
+
+                        // 捲動錨點（確保捲到容器底部）
+                        Color.clear
+                            .frame(height: 1)
+                            .id("scrollBottom")
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
+                    .background(
+                        ScrollViewScrollObserver { scrollView in
+                            let atBottom = appState.isSubtitleLocked
+                                ? true
+                                : ScrollViewScrollObserver.isAtBottom(scrollView: scrollView)
+                            if isPinnedToBottom != atBottom {
+                                DispatchQueue.main.async {
+                                    isPinnedToBottom = atBottom
+                                }
+                            }
+                        }
+                    )
+                }
+                .scrollDisabled(appState.isSubtitleLocked)
+                .onChangeCompat(of: appState.isSubtitleLocked) {
+                    if appState.isSubtitleLocked {
+                        DispatchQueue.main.async {
+                            isPinnedToBottom = true
+                            proxy.scrollTo("scrollBottom", anchor: .bottom)
+                        }
+                    }
+                }
+                .onAppear {
+                    guard !didInitialScroll else { return }
+                    didInitialScroll = true
+                    DispatchQueue.main.async {
+                        isPinnedToBottom = true
+                        proxy.scrollTo("scrollBottom", anchor: .bottom)
+                    }
                 }
                 .onChangeCompat(of: appState.subtitleHistory.count) {
                     // 新字幕進來時自動捲到底部
-                    if let lastId = appState.subtitleHistory.last?.id {
-                        withAnimation {
-                            proxy.scrollTo(lastId, anchor: .bottom)
-                        }
+                    guard isPinnedToBottom else { return }
+                    withAnimation {
+                        proxy.scrollTo("scrollBottom", anchor: .bottom)
                     }
                 }
                 .onChangeCompat(of: appState.currentInterim) {
                     // interim 更新時捲到底部（不帶動畫，避免高頻更新造成抖動）
-                    if appState.currentInterim != nil {
-                        proxy.scrollTo("interim", anchor: .bottom)
+                    if appState.currentInterim != nil, isPinnedToBottom {
+                        proxy.scrollTo("scrollBottom", anchor: .bottom)
                     }
                 }
             }
@@ -117,26 +152,32 @@ struct SubtitleRow: View {
         VStack(alignment: .leading, spacing: 4) {
             // 原文
             if showOriginal {
-                Text(entry.originalText)
-                    .font(.system(size: appState.subtitleFontSize * 0.85))
-                    .foregroundColor(.white.opacity(0.8))
-                    .lineLimit(nil)  // 不限制行數
-                    .fixedSize(horizontal: false, vertical: true)  // 允許垂直擴展
+                SubtitleText(
+                    text: entry.originalText,
+                    font: .system(size: appState.subtitleFontSize * 0.85),
+                    textColor: .orange.opacity(0.8),
+                    isItalic: false,
+                    outlineEnabled: appState.subtitleTextOutlineEnabled
+                )
             }
 
             // 翻譯（或翻譯中提示）
             if let translation = entry.translatedText {
-                Text(translation)
-                    .font(.system(size: appState.subtitleFontSize))
-                    // Phase 2: 被修正過的翻譯用淺綠色顯示
-                    .foregroundColor(entry.wasRevised ? .mint : .white)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
+                SubtitleText(
+                    text: translation,
+                    font: .system(size: appState.subtitleFontSize),
+                    textColor: entry.wasRevised ? .mint : .white,
+                    isItalic: false,
+                    outlineEnabled: appState.subtitleTextOutlineEnabled
+                )
             } else {
-                Text("翻譯中...")
-                    .font(.system(size: appState.subtitleFontSize))
-                    .foregroundColor(.gray)
-                    .italic()
+                SubtitleText(
+                    text: "翻譯中...",
+                    font: .system(size: appState.subtitleFontSize),
+                    textColor: .gray,
+                    isItalic: true,
+                    outlineEnabled: appState.subtitleTextOutlineEnabled
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,17 +193,107 @@ struct InterimRow: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        Text(text)
-            .font(.system(size: appState.subtitleFontSize * 0.85))
-            .foregroundColor(.cyan.opacity(0.8))
-            .italic()
-            .lineLimit(nil)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        SubtitleText(
+            text: text,
+            font: .system(size: appState.subtitleFontSize * 0.85),
+            textColor: .cyan.opacity(0.8),
+            isItalic: true,
+            outlineEnabled: appState.subtitleTextOutlineEnabled
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 // MARK: - DragHandle
+
+// MARK: - OutlinedText
+
+struct OutlinedText: View {
+    let text: String
+    let font: Font
+    let textColor: Color
+    let strokeColor: Color
+    let strokeWidth: CGFloat
+    var isItalic: Bool = false
+
+    var body: some View {
+        ZStack {
+            strokeLayer(offsetX: -strokeWidth, offsetY: 0)
+            strokeLayer(offsetX: strokeWidth, offsetY: 0)
+            strokeLayer(offsetX: 0, offsetY: -strokeWidth)
+            strokeLayer(offsetX: 0, offsetY: strokeWidth)
+            strokeLayer(offsetX: -strokeWidth, offsetY: -strokeWidth)
+            strokeLayer(offsetX: -strokeWidth, offsetY: strokeWidth)
+            strokeLayer(offsetX: strokeWidth, offsetY: -strokeWidth)
+            strokeLayer(offsetX: strokeWidth, offsetY: strokeWidth)
+            styledText(color: textColor)
+        }
+    }
+
+    @ViewBuilder
+    private func styledText(color: Color) -> some View {
+        if isItalic {
+            Text(text)
+                .font(font)
+                .foregroundColor(color)
+                .italic()
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(text)
+                .font(font)
+                .foregroundColor(color)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func strokeLayer(offsetX: CGFloat, offsetY: CGFloat) -> some View {
+        styledText(color: strokeColor)
+            .offset(x: offsetX, y: offsetY)
+    }
+}
+
+struct SubtitleText: View {
+    let text: String
+    let font: Font
+    let textColor: Color
+    let isItalic: Bool
+    let outlineEnabled: Bool
+
+    var body: some View {
+        if outlineEnabled {
+            OutlinedText(
+                text: text,
+                font: font,
+                textColor: textColor,
+                strokeColor: .black,
+                strokeWidth: 1,
+                isItalic: isItalic
+            )
+        } else {
+            styledText(color: textColor)
+        }
+    }
+
+    @ViewBuilder
+    private func styledText(color: Color) -> some View {
+        if isItalic {
+            Text(text)
+                .font(font)
+                .foregroundColor(color)
+                .italic()
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(text)
+                .font(font)
+                .foregroundColor(color)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
 
 /// 拖曳把手（點擊可切換鎖定狀態）
 struct DragHandle: View {
@@ -181,6 +312,85 @@ struct DragHandle: View {
         }
         .buttonStyle(.plain)
         .help("點擊鎖定字幕位置")
+    }
+}
+
+// MARK: - Scroll Observer
+
+struct ScrollViewScrollObserver: NSViewRepresentable {
+    let onScroll: (NSScrollView) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScroll: onScroll)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        Task { @MainActor in
+            attachIfPossible(view, context: context)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        Task { @MainActor in
+            attachIfPossible(nsView, context: context)
+        }
+    }
+
+    @MainActor
+    private func attachIfPossible(_ nsView: NSView, context: Context) {
+        guard let scrollView = nsView.enclosingScrollView else { return }
+        context.coordinator.attach(to: scrollView)
+    }
+
+    static func isAtBottom(scrollView: NSScrollView) -> Bool {
+        guard let documentView = scrollView.documentView else { return true }
+        let contentHeight = documentView.frame.height
+        let visibleRect = scrollView.documentVisibleRect
+
+        if contentHeight <= visibleRect.height {
+            return true
+        }
+
+        let threshold: CGFloat = 12
+        if documentView.isFlipped {
+            return (contentHeight - visibleRect.maxY) <= threshold
+        }
+        return visibleRect.minY <= threshold
+    }
+
+    final class Coordinator: NSObject {
+        private let onScroll: (NSScrollView) -> Void
+        private weak var scrollView: NSScrollView?
+
+        init(onScroll: @escaping (NSScrollView) -> Void) {
+            self.onScroll = onScroll
+        }
+
+        @MainActor
+        func attach(to scrollView: NSScrollView) {
+            if self.scrollView === scrollView { return }
+            NotificationCenter.default.removeObserver(self)
+            self.scrollView = scrollView
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleBoundsChanged(_:)),
+                name: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView
+            )
+        }
+
+        @objc
+        private func handleBoundsChanged(_ notification: Notification) {
+            guard let scrollView = scrollView else { return }
+            onScroll(scrollView)
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
     }
 }
 

@@ -113,6 +113,7 @@ struct AutoSubApp: App {
         appState.subtitleHistoryLimit = config.subtitleHistoryLimit
         appState.subtitleAutoOpacityByCount = config.subtitleAutoOpacityByCount
         appState.showOriginalText = config.showOriginalText
+        appState.subtitleTextOutlineEnabled = config.subtitleTextOutlineEnabled
         appState.applyProfiles(config.profiles, selectedProfileId: config.selectedProfileId)
     }
 

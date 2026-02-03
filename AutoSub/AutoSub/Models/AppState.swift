@@ -54,17 +54,18 @@ class AppState: ObservableObject {
         didSet {
             if subtitleHistoryLimit < 1 {
                 subtitleHistoryLimit = 1
-            } else if subtitleHistoryLimit > 6 {
-                subtitleHistoryLimit = 6
+            } else if subtitleHistoryLimit > 30 {
+                subtitleHistoryLimit = 30
             }
             trimSubtitleHistoryIfNeeded()
         }
     }
     @Published var subtitleAutoOpacityByCount: Bool = true
     @Published var showOriginalText: Bool = true
+    @Published var subtitleTextOutlineEnabled: Bool = true
 
     // MARK: - 字幕歷史
-    /// 字幕歷史記錄（最多保留 3 筆）
+    /// 字幕歷史記錄（最多保留 30 筆）
     @Published var subtitleHistory: [SubtitleEntry] = []
 
     // MARK: - Interim（正在說的話）
@@ -256,6 +257,7 @@ class AppState: ObservableObject {
             subtitleHistoryLimit: subtitleHistoryLimit,
             subtitleAutoOpacityByCount: subtitleAutoOpacityByCount,
             showOriginalText: showOriginalText,
+            subtitleTextOutlineEnabled: subtitleTextOutlineEnabled,
             deepgramEndpointingMs: profile.deepgramEndpointingMs,
             deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
             deepgramMaxBufferChars: profile.deepgramMaxBufferChars,

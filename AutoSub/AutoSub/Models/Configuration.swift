@@ -20,6 +20,7 @@ struct Configuration: Codable {
     var subtitleHistoryLimit: Int = 3
     var subtitleAutoOpacityByCount: Bool = true
     var showOriginalText: Bool = true
+    var subtitleTextOutlineEnabled: Bool = true
 
     // MARK: - Deepgram 斷句參數（Phase 1 調整）
     /// 靜音判定時間（毫秒），預設 200ms
@@ -54,6 +55,7 @@ struct Configuration: Codable {
         subtitleHistoryLimit: Int = 3,
         subtitleAutoOpacityByCount: Bool = true,
         showOriginalText: Bool = true,
+        subtitleTextOutlineEnabled: Bool = true,
         deepgramEndpointingMs: Int = 200,
         deepgramUtteranceEndMs: Int = 1000,
         deepgramMaxBufferChars: Int = 50,
@@ -75,6 +77,7 @@ struct Configuration: Codable {
         self.subtitleHistoryLimit = subtitleHistoryLimit
         self.subtitleAutoOpacityByCount = subtitleAutoOpacityByCount
         self.showOriginalText = showOriginalText
+        self.subtitleTextOutlineEnabled = subtitleTextOutlineEnabled
         self.deepgramEndpointingMs = deepgramEndpointingMs
         self.deepgramUtteranceEndMs = deepgramUtteranceEndMs
         self.deepgramMaxBufferChars = deepgramMaxBufferChars
@@ -98,6 +101,7 @@ struct Configuration: Codable {
         case subtitleHistoryLimit
         case subtitleAutoOpacityByCount
         case showOriginalText
+        case subtitleTextOutlineEnabled
         case deepgramEndpointingMs
         case deepgramUtteranceEndMs
         case deepgramMaxBufferChars
@@ -122,6 +126,7 @@ struct Configuration: Codable {
         subtitleHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .subtitleHistoryLimit) ?? 3
         subtitleAutoOpacityByCount = try container.decodeIfPresent(Bool.self, forKey: .subtitleAutoOpacityByCount) ?? true
         showOriginalText = try container.decodeIfPresent(Bool.self, forKey: .showOriginalText) ?? true
+        subtitleTextOutlineEnabled = try container.decodeIfPresent(Bool.self, forKey: .subtitleTextOutlineEnabled) ?? true
         deepgramEndpointingMs = try container.decodeIfPresent(Int.self, forKey: .deepgramEndpointingMs) ?? 200
         deepgramUtteranceEndMs = try container.decodeIfPresent(Int.self, forKey: .deepgramUtteranceEndMs) ?? 1000
         deepgramMaxBufferChars = try container.decodeIfPresent(Int.self, forKey: .deepgramMaxBufferChars) ?? 50
@@ -182,6 +187,7 @@ struct Configuration: Codable {
         try container.encode(subtitleHistoryLimit, forKey: .subtitleHistoryLimit)
         try container.encode(subtitleAutoOpacityByCount, forKey: .subtitleAutoOpacityByCount)
         try container.encode(showOriginalText, forKey: .showOriginalText)
+        try container.encode(subtitleTextOutlineEnabled, forKey: .subtitleTextOutlineEnabled)
         try container.encode(profiles, forKey: .profiles)
         try container.encodeIfPresent(selectedProfileId, forKey: .selectedProfileId)
     }

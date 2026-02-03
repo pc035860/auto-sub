@@ -128,7 +128,6 @@ struct ProfileSettingsView: View {
     @FocusState private var focusedField: Field?
 
     private enum Field {
-        case name
         case context
         case keyterms
     }
@@ -259,11 +258,18 @@ struct ProfileSettingsView: View {
             .disabled(appState.isCapturing)
 
             Section {
-                TextField("名稱", text: $nameDraft)
-                    .focused($focusedField, equals: .name)
-                    .onSubmit {
+                TextField(
+                    "名稱",
+                    text: $nameDraft,
+                    onEditingChanged: { isEditing in
+                        if !isEditing {
+                            commitDrafts(to: appState.selectedProfileId)
+                        }
+                    },
+                    onCommit: {
                         commitDrafts(to: appState.selectedProfileId)
                     }
+                )
             } header: {
                 Text("基本資訊")
             }
@@ -390,6 +396,11 @@ struct SubtitleSettingsView: View {
                     .onChangeCompat(of: appState.showOriginalText) {
                         appState.saveConfiguration()
                     }
+
+                Toggle("文字外框（1px 黑色）", isOn: $appState.subtitleTextOutlineEnabled)
+                    .onChangeCompat(of: appState.subtitleTextOutlineEnabled) {
+                        appState.saveConfiguration()
+                    }
             } header: {
                 Text("顯示設定")
             }
@@ -488,7 +499,7 @@ struct SubtitleRenderSettingsView: View {
             }
 
             Section {
-                Stepper("歷史列數：\(appState.subtitleHistoryLimit)", value: $appState.subtitleHistoryLimit, in: 1...6)
+                Stepper("歷史列數：\(appState.subtitleHistoryLimit)", value: $appState.subtitleHistoryLimit, in: 1...30)
                     .onChangeCompat(of: appState.subtitleHistoryLimit) {
                         appState.saveConfiguration()
                     }
