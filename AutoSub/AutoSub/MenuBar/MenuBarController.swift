@@ -20,12 +20,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pythonBridge: PythonBridgeService?,
         subtitleWindowController: SubtitleWindowController
     ) {
-        if menuBarController == nil {
+        MenuActionHandler.shared.configure(appState: appState)
+        if let existing = MenuBarController.shared {
+            menuBarController = existing
+        } else {
             menuBarController = MenuBarController(
                 appState: appState,
                 audioService: audioService,
                 pythonBridge: pythonBridge,
-                subtitleWindowController: subtitleWindowController
+                subtitleWindowController: subtitleWindowController,
+                settingsTarget: MenuActionHandler.shared
             )
         }
         if lifecycleController == nil, let menuBarController {
@@ -40,7 +44,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @MainActor
+final class MenuActionHandler: NSObject {
+    static let shared = MenuActionHandler()
+
+    private var appState: AppState?
+    private var settingsWindowController: SettingsWindowController?
+
+    func configure(appState: AppState) {
+        self.appState = appState
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(appState: appState)
+        }
+    }
+
+    @objc func openSettings(_ sender: Any?) {
+        if let appState, settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(appState: appState)
+        }
+        settingsWindowController?.show()
+    }
+}
+
+@MainActor
 final class MenuBarController: NSObject {
+    static var shared: MenuBarController?
+
     private let appState: AppState
     private let audioService: AudioCaptureService
     private let pythonBridge: PythonBridgeService?
@@ -60,26 +88,30 @@ final class MenuBarController: NSObject {
 
     private let statusRowView = StatusMenuItemView()
     private let profileSubmenu = NSMenu()
-    private let settingsWindowController: SettingsWindowController
+    private let settingsTarget: MenuActionHandler
 
     init(
         appState: AppState,
         audioService: AudioCaptureService,
         pythonBridge: PythonBridgeService?,
-        subtitleWindowController: SubtitleWindowController
+        subtitleWindowController: SubtitleWindowController,
+        settingsTarget: MenuActionHandler
     ) {
         self.appState = appState
         self.audioService = audioService
         self.pythonBridge = pythonBridge
         self.subtitleWindowController = subtitleWindowController
-        self.settingsWindowController = SettingsWindowController(appState: appState)
+        self.settingsTarget = settingsTarget
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+        MenuBarController.shared = self
         setupStatusItem()
         buildMenu()
         bindAppState()
         refreshAll()
     }
+
+
 
     func toggleCaptureFromShortcut() {
         handleToggleCapture(nil)
@@ -112,8 +144,8 @@ final class MenuBarController: NSObject {
 
         settingsMenuItem.title = "設定..."
         settingsMenuItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
-        settingsMenuItem.target = self
-        settingsMenuItem.action = #selector(openSettings(_:))
+        settingsMenuItem.target = settingsTarget
+        settingsMenuItem.action = #selector(MenuActionHandler.openSettings(_:))
         menu.addItem(settingsMenuItem)
 
         subtitleLockMenuItem.target = self
@@ -254,10 +286,6 @@ final class MenuBarController: NSObject {
     @objc private func selectProfile(_ sender: NSMenuItem) {
         guard let profileId = sender.representedObject as? UUID else { return }
         appState.selectProfile(id: profileId)
-    }
-
-    @objc private func openSettings(_ sender: Any?) {
-        settingsWindowController.show()
     }
 
     @objc private func toggleSubtitleLock(_ sender: NSMenuItem) {
@@ -490,12 +518,13 @@ final class StatusMenuItemView: NSView {
 }
 
 @MainActor
-final class SettingsWindowController {
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let appState: AppState
     private var window: NSWindow?
 
     init(appState: AppState) {
         self.appState = appState
+        super.init()
     }
 
     func show() {
@@ -508,10 +537,10 @@ final class SettingsWindowController {
 
     private func createWindow() {
         let rootView = SettingsView().environmentObject(appState)
-        let hostingView = NSHostingView(rootView: rootView)
+        let hostingController = NSHostingController(rootView: rootView)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -519,8 +548,18 @@ final class SettingsWindowController {
         window.title = "設定"
         window.center()
         window.identifier = NSUserInterfaceItemIdentifier("AutoSubSettingsWindow")
-        window.contentView = hostingView
+        window.contentViewController = hostingController
+        window.setContentSize(NSSize(width: 500, height: 560))
+        window.contentMinSize = NSSize(width: 500, height: 560)
+        window.contentMaxSize = NSSize(width: 500, height: 560)
+        window.animationBehavior = .none
+        window.isReleasedWhenClosed = false
+        window.delegate = self
         self.window = window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window = nil
     }
 }
 
