@@ -36,6 +36,12 @@ struct SettingsView: View {
                 .tabItem {
                     Label("字幕渲染", systemImage: "rectangle.on.rectangle")
                 }
+
+            // 快捷鍵設定
+            ShortcutSettingsView()
+                .tabItem {
+                    Label("快捷鍵", systemImage: "keyboard")
+                }
         }
         .frame(width: 500, height: 560)
         .background(SettingsWindowIdentifier())

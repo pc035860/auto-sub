@@ -17,6 +17,8 @@ targets:
   AutoSub:
     type: application
     platform: macOS
+    dependencies:
+      - package: KeyboardShortcuts
     sources:
       - path: AutoSub
         excludes:
@@ -46,3 +48,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.automation.apple-events: true
+
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    exactVersion: 2.4.0

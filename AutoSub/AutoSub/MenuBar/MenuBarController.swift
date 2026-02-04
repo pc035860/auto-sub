@@ -615,7 +615,7 @@ final class AppLifecycleController {
     }
 
     private func setupKeyboardShortcuts() {
-        KeyboardShortcuts.shared.register()
+        ShortcutManager.shared.register()
 
         NotificationCenter.default.addObserver(
             forName: .toggleCapture,

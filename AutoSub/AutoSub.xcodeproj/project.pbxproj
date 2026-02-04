@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		09410AB1A7539EB1105270A9 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69A292045BA4389325D83D0 /* OnboardingView.swift */; };
+		19E23F16D4E118966D696AA4 /* ShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0E179352762DDA37DAD85DE /* ShortcutManager.swift */; };
 		25E86B61BEB1DB61C2265303 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B4844765DAFD2B6B8EDD5C6 /* AppState.swift */; };
 		29D652B2A997B26CCBA72D41 /* backend in Resources */ = {isa = PBXBuildFile; fileRef = 0B238F0EBA848E92F6A91673 /* backend */; };
 		39133CD5AC004907F2602DD0 /* PythonBridgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A4ECB92718F2724AF20089 /* PythonBridgeService.swift */; };
@@ -19,17 +20,19 @@
 		6AF1194CD9A047B9C384CEB5 /* AudioTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291720895555773E6C0DCDCE /* AudioTestView.swift */; };
 		7C82440CF235F75E47739FB3 /* Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B336E37BFCE80A1B319151 /* Profile.swift */; };
 		7DF54ADDEA09A5224E2F9F19 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F3F06E7117DA2DFB493C1B4 /* MenuBarView.swift */; };
+		8B7C7FB3E23C3040F01810F5 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = BF3D50A08DEBBB885724E783 /* KeyboardShortcuts */; };
 		B01D08FAB9FA032909E82A32 /* AutoSubApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3312F51BCFDEC5D738DAFF53 /* AutoSubApp.swift */; };
-		C4812DECDE72AA3A5AC253AE /* KeyboardShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8891BFE05D44C166F77C20 /* KeyboardShortcuts.swift */; };
 		C4A1F853F1886CA8DBA82595 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 270B2719EA436D73E92DAF76 /* AudioCaptureService.swift */; };
 		D4F11875717B362781834D3A /* SubtitleEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8341B26FDC38A71BDABCD52 /* SubtitleEntry.swift */; };
 		D5FB93C88E2FA9F981292734 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F50D3D325114F009F61C66 /* MenuBarController.swift */; };
 		D7C5DA738B11AFDA8C2E7118 /* SubtitleOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A592E9AEC39965E17B99203 /* SubtitleOverlay.swift */; };
+		FBD1C6CDA060B4627DAD9A55 /* ShortcutSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EBE8B564ADAC4DAAF673317 /* ShortcutSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		07A4ECB92718F2724AF20089 /* PythonBridgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PythonBridgeService.swift; sourceTree = "<group>"; };
 		0B238F0EBA848E92F6A91673 /* backend */ = {isa = PBXFileReference; lastKnownFileType = folder; name = backend; path = AutoSub/Resources/backend; sourceTree = SOURCE_ROOT; };
+		0EBE8B564ADAC4DAAF673317 /* ShortcutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutSettingsView.swift; sourceTree = "<group>"; };
 		1BB4054B3BEDFCC8304C9A3B /* Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Configuration.swift; sourceTree = "<group>"; };
 		1F3F06E7117DA2DFB493C1B4 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		270B2719EA436D73E92DAF76 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
@@ -40,16 +43,27 @@
 		77B336E37BFCE80A1B319151 /* Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Profile.swift; sourceTree = "<group>"; };
 		7A592E9AEC39965E17B99203 /* SubtitleOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleOverlay.swift; sourceTree = "<group>"; };
 		7B4844765DAFD2B6B8EDD5C6 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
-		7D8891BFE05D44C166F77C20 /* KeyboardShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcuts.swift; sourceTree = "<group>"; };
 		9C7C6EF2BF4EA62776571EB7 /* NotificationNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationNames.swift; sourceTree = "<group>"; };
 		9FB55460E99FE0E95C0B1B56 /* AutoSub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AutoSub.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B69A292045BA4389325D83D0 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		C0E179352762DDA37DAD85DE /* ShortcutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutManager.swift; sourceTree = "<group>"; };
 		C8341B26FDC38A71BDABCD52 /* SubtitleEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleEntry.swift; sourceTree = "<group>"; };
 		D3F50D3D325114F009F61C66 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		D7CF494501C29AEFDCAC2B31 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D9783669E84B4444B9D4DC6E /* ConfigurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationService.swift; sourceTree = "<group>"; };
 		DDB74A62A6204281567D0C2A /* SubtitleWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9922231955A0CC139B3952AA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B7C7FB3E23C3040F01810F5 /* KeyboardShortcuts in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		120C1C68EF6A99AD2C984C90 = {
@@ -99,6 +113,7 @@
 				1F3F06E7117DA2DFB493C1B4 /* MenuBarView.swift */,
 				B69A292045BA4389325D83D0 /* OnboardingView.swift */,
 				38C9283309B83D217BFE3BA5 /* SettingsView.swift */,
+				0EBE8B564ADAC4DAAF673317 /* ShortcutSettingsView.swift */,
 				7A592E9AEC39965E17B99203 /* SubtitleOverlay.swift */,
 			);
 			path = Views;
@@ -115,8 +130,8 @@
 		8E307BB10F8F84067A70C231 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
-				7D8891BFE05D44C166F77C20 /* KeyboardShortcuts.swift */,
 				9C7C6EF2BF4EA62776571EB7 /* NotificationNames.swift */,
+				C0E179352762DDA37DAD85DE /* ShortcutManager.swift */,
 				DDB74A62A6204281567D0C2A /* SubtitleWindowController.swift */,
 			);
 			path = Utilities;
@@ -152,6 +167,7 @@
 			buildPhases = (
 				A10956FFC524C2DB418870F2 /* Sources */,
 				78803D87B86E43E392EDF992 /* Resources */,
+				9922231955A0CC139B3952AA /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -159,6 +175,7 @@
 			);
 			name = AutoSub;
 			packageProductDependencies = (
+				BF3D50A08DEBBB885724E783 /* KeyboardShortcuts */,
 			);
 			productName = AutoSub;
 			productReference = 9FB55460E99FE0E95C0B1B56 /* AutoSub.app */;
@@ -183,6 +200,9 @@
 			);
 			mainGroup = 120C1C68EF6A99AD2C984C90;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C5CD7875AC376AA9F7549A7E /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -214,7 +234,6 @@
 				B01D08FAB9FA032909E82A32 /* AutoSubApp.swift in Sources */,
 				665BC7067D9C3657DDB4CEE8 /* Configuration.swift in Sources */,
 				44CCC8AA6D76FA3E2046EDE4 /* ConfigurationService.swift in Sources */,
-				C4812DECDE72AA3A5AC253AE /* KeyboardShortcuts.swift in Sources */,
 				D5FB93C88E2FA9F981292734 /* MenuBarController.swift in Sources */,
 				7DF54ADDEA09A5224E2F9F19 /* MenuBarView.swift in Sources */,
 				66C4BB04A2230498126E812A /* NotificationNames.swift in Sources */,
@@ -222,6 +241,8 @@
 				7C82440CF235F75E47739FB3 /* Profile.swift in Sources */,
 				39133CD5AC004907F2602DD0 /* PythonBridgeService.swift in Sources */,
 				68B282D9BD0C7E723BC6D08F /* SettingsView.swift in Sources */,
+				19E23F16D4E118966D696AA4 /* ShortcutManager.swift in Sources */,
+				FBD1C6CDA060B4627DAD9A55 /* ShortcutSettingsView.swift in Sources */,
 				D4F11875717B362781834D3A /* SubtitleEntry.swift in Sources */,
 				D7C5DA738B11AFDA8C2E7118 /* SubtitleOverlay.swift in Sources */,
 				621430D49570942586EBF8D9 /* SubtitleWindowController.swift in Sources */,
@@ -404,6 +425,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C5CD7875AC376AA9F7549A7E /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts";
+			requirement = {
+				kind = exactVersion;
+				version = 2.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BF3D50A08DEBBB885724E783 /* KeyboardShortcuts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C5CD7875AC376AA9F7549A7E /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
+			productName = KeyboardShortcuts;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = DCB9F8358E80E02A5A663348 /* Project object */;
 }
