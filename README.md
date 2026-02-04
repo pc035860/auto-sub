@@ -14,7 +14,7 @@ macOS Menu Bar 即時字幕翻譯應用程式。擷取系統音訊，進行語�
 
 - macOS 13.0+
 - 螢幕錄製權限（用於擷取系統音訊）
-- Python 3（內嵌 backend 使用）
+- Python 3.10+（內嵌 backend 使用，建議 3.12）
 - API Keys：[Deepgram](https://deepgram.com) + [Google Gemini](https://ai.google.dev)
 
 ## 建構與執行
@@ -70,7 +70,7 @@ open AutoSub/build/Debug/AutoSub.app
 ## 技術棧
 
 - **Swift 6.0** + AppKit + SwiftUI
-- **Python 3** + Deepgram SDK v5 + Google GenAI SDK
+- **Python 3.10+** + Deepgram SDK v5 + Google GenAI SDK
 - **Deepgram nova-3** 即時語音辨識
 - **Google Gemini** 翻譯（預設 `gemini-2.5-flash-lite-preview-09-2025`）
 - **ScreenCaptureKit** 系統音訊擷取
