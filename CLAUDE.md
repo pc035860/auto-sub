@@ -61,48 +61,72 @@ cd poc && uv run python poc.py
 
 ```
 auto-sub/
-├── AutoSub/                    # macOS 應用程式 (Swift 6.0, SwiftUI)
+├── AutoSub/                    # macOS 應用程式 (Swift 6.0, AppKit + SwiftUI)
 │   ├── project.yml            # XcodeGen 組態
 │   └── AutoSub/
+│       ├── AutoSubApp.swift   # 應用入口點，初始化核心服務
+│       ├── MenuBar/           # AppKit MenuBar 控制器
+│       │   └── MenuBarController.swift  # NSStatusItem、AppDelegate、設定視窗
 │       ├── Services/          # 3 核心服務
 │       │   ├── AudioCaptureService.swift    # ScreenCaptureKit 音訊擷取
 │       │   ├── PythonBridgeService.swift    # Python 子程序 IPC
 │       │   └── ConfigurationService.swift   # 設定 + Keychain
 │       ├── Models/            # 資料模型
-│       │   └── AppState.swift               # 應用狀態 (ObservableObject)
+│       │   ├── AppState.swift       # 應用狀態 (ObservableObject)
+│       │   ├── Configuration.swift  # 設定模型 (含 Profile 遷移)
+│       │   ├── Profile.swift        # 轉譯/翻譯場景 Profile
+│       │   └── SubtitleEntry.swift  # 字幕條目 (支援翻譯中狀態)
 │       ├── Views/             # SwiftUI 視圖
-│       │   └── SubtitleOverlay.swift        # 字幕顯示
+│       │   ├── SubtitleOverlay.swift   # 字幕顯示 (歷史+透明度遞減)
+│       │   ├── SettingsView.swift      # Tab 式設定介面
+│       │   ├── MenuBarView.swift       # MenuBar 選單內容
+│       │   ├── AudioTestView.swift     # 音訊測試
+│       │   └── OnboardingView.swift    # 首次設定引導
+│       ├── Utilities/         # 工具類
+│       │   ├── KeyboardShortcuts.swift        # 全域快捷鍵 (⌘⇧S/⌘⇧H)
+│       │   ├── NotificationNames.swift        # 統一通知定義
+│       │   └── SubtitleWindowController.swift # 字幕視窗管理 (拖動+鎖定)
 │       └── Resources/backend/  # Python 後端（內嵌）
 │           ├── main.py        # 主程式，stdin/stdout IPC
 │           ├── transcriber.py # Deepgram SDK v5 即時轉錄
-│           └── translator.py  # Gemini 翻譯 + context 管理
+│           └── translator.py  # Gemini 翻譯 + context 管理 + 上下文修正
 │
 ├── poc/                       # 概念驗證（獨立執行）
 │   ├── poc.py                # PoC 主程式
 │   └── systemAudioDump/      # Swift 音訊擷取工具
 │
 └── specs/                     # 規格文件
-    └── 001-initial-implementation/
-        ├── PRD.md            # 產品需求文件
-        └── SPEC.md           # 技術規格
+    ├── 001-initial-implementation/
+    │   ├── PRD.md            # 產品需求文件
+    │   └── SPEC.md           # 技術規格
+    └── 002-subtitle-display-improvements/
+        ├── PRD.md            # 字幕顯示改進需求
+        └── SPEC.md           # 字幕顯示改進規格
 ```
 
 ## 資料流
 
 ```
-AudioCaptureService (Swift)
+AudioCaptureService (Swift, ScreenCaptureKit)
     ↓ PCM 24kHz/16-bit/stereo (9600 bytes/chunk)
 PythonBridgeService.stdin
     ↓
 main.py → transcriber.py (Deepgram WebSocket)
-    ↓ 分段文字
-translator.py (Gemini Chat API)
+    ↓ transcript (id, text) + interim (即時文字)
+translator.py (Gemini Chat API, Structured Output)
     ↓ JSON Lines
 PythonBridgeService.stdout
-    ↓ {"type":"subtitle","original":"...","translation":"..."}
-AppState.currentSubtitle
+    ↓ {"type":"subtitle","id":"...","original":"...","translation":"..."}
+    ↓ {"type":"interim","text":"..."}
+AppState
+    ├─ addTranscript()      → subtitleHistory (最多 N 筆)
+    ├─ updateTranslation()  → 更新翻譯 + 可選上下文修正
+    └─ updateInterim()      → currentInterim (即時顯示)
     ↓
-SubtitleOverlay (NSWindow)
+SubtitleOverlay (SwiftUI in NSWindow)
+    ├─ 歷史字幕堆疊 (透明度遞減)
+    ├─ 即時原文 (interim)
+    └─ 自動捲動 + 拖曳定位
 ```
 
 ## 音訊格式
@@ -118,7 +142,10 @@ SubtitleOverlay (NSWindow)
 
 **stdout (Python → Swift)**：JSON Lines
 ```json
-{"type": "subtitle", "original": "日文原文", "translation": "翻譯"}
+{"type": "transcript", "id": "uuid", "text": "原文"}
+{"type": "subtitle", "id": "uuid", "original": "原文", "translation": "翻譯"}
+{"type": "translation_update", "id": "prev-uuid", "translation": "修正後的前句翻譯"}
+{"type": "interim", "text": "正在說的話（即時）"}
 {"type": "status", "status": "connected"}
 {"type": "error", "message": "...", "code": "..."}
 ```
@@ -126,16 +153,42 @@ SubtitleOverlay (NSWindow)
 ## 技術細節
 
 ### Deepgram（transcriber.py）
-- 模型：`nova-3`，語言：`ja`
-- endpointing：400ms，utterance_end：1200ms
-- 分段邏輯：is_final buffer + speech_final 觸發 + 超過 80 字強制 flush + UtteranceEnd 觸發
+- 模型：`nova-3`，語言：可配置（預設 `ja`）
+- endpointing：可配置（預設 200ms），utterance_end：可配置（預設 1000ms）
+- 分段邏輯：is_final buffer + speech_final 觸發 + 超過 max_buffer_chars（預設 50）強制 flush + UtteranceEnd 觸發
+- 支援 keyterm 提示詞（透過 Profile 設定）
+- 支援 interim 即時回饋（on_interim callback）
+- 追蹤前句資訊以支援上下文修正
 
 ### Gemini（translator.py）
-- 模型：`gemini-2.5-flash-lite`
-- Chat Session 保持上下文，context 超過 100K token 自動摘要重建
+- 預設模型：`gemini-2.5-flash-lite-preview-09-2025`，可在設定中切換
+- 使用 Structured Output (Pydantic `TranslationResult`) 確保 JSON 回應格式
+- Chat Session 保持上下文，context 超過可配置上限（預設 20K token）自動摘要重建
 - 翻譯策略：人名音譯一致性、台灣常見譯法
+- 上下文修正：翻譯時可同時修正前句翻譯（誤譯、語意不通、人名不一致）
+- Thinking 配置：Gemini 3 使用 `thinking_level="minimal"`，Gemini 2.5 使用 `thinking_budget=0`
+
+### Profile 系統
+- 每個 Profile 包含：翻譯背景、keyterm 提示詞、來源/目標語言、Deepgram 斷句參數
+- 支援多場景切換（日劇、日漫、教學等）
+- 舊配置自動遷移為預設 Profile
+
+### 全域快捷鍵
+- `⌘ + Shift + S`：開始/停止擷取
+- `⌘ + Shift + H`：隱藏/顯示字幕
+
+### 字幕顯示
+- 歷史字幕堆疊（可調保留筆數），透明度遞減
+- 即時原文顯示（interim），翻譯中狀態
+- 字幕位置可拖曳、鎖定、持久化（UserDefaults）
+- 文字邊框（outline）支援，智能自動捲動
 
 ### macOS 要求
 - macOS 13.0+（需要 ScreenCaptureKit）
 - 需要螢幕錄製權限
 - App Sandbox 已禁用（需要音訊存取）
+
+### 設定儲存
+- **Keychain**：API Keys（deepgramApiKey, geminiApiKey）
+- **Application Support**：`~/Library/Application Support/AutoSub/config.json`（Profiles、字幕參數等）
+- **UserDefaults**：字幕位置 (X/Y)、鎖定狀態
