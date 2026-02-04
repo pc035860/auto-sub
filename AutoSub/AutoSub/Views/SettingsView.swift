@@ -125,12 +125,6 @@ struct ProfileSettingsView: View {
     @State private var translationContextDraft: String = ""
     @State private var keytermsDraft: String = ""
     @State private var lastSelectedProfileId: UUID?
-    @FocusState private var focusedField: Field?
-
-    private enum Field {
-        case context
-        case keyterms
-    }
 
     private var selectedProfileBinding: Binding<UUID> {
         Binding(
@@ -276,36 +270,6 @@ struct ProfileSettingsView: View {
             .disabled(appState.isCapturing)
 
             Section {
-                TextEditor(text: $translationContextDraft)
-                    .frame(minHeight: 90)
-                    .focused($focusedField, equals: .context)
-            } header: {
-                Text("翻譯背景資訊")
-            } footer: {
-                Text("可輸入人物、節目或領域背景，提升翻譯一致性。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .disabled(appState.isCapturing)
-
-            Section {
-                TextEditor(text: $keytermsDraft)
-                    .frame(minHeight: 90)
-                    .focused($focusedField, equals: .keyterms)
-                HStack {
-                    Text("目前：\(keytermsDraftCount) 個")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("建議 20–50 個，總 token 上限 500")
-                        .foregroundColor(.secondary)
-                }
-                .font(.caption)
-            } header: {
-                Text("Deepgram Keyterms（每行一個）")
-            }
-            .disabled(appState.isCapturing)
-
-            Section {
                 Picker("原文語言", selection: sourceLanguageBinding) {
                     Text("日文").tag("ja")
                     Text("英文").tag("en")
@@ -319,6 +283,46 @@ struct ProfileSettingsView: View {
                 }
             } header: {
                 Text("語言設定")
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                ProfileTextView(
+                    text: $translationContextDraft,
+                    isEditable: !appState.isCapturing,
+                    onEndEditing: {
+                        commitDrafts(to: appState.selectedProfileId)
+                    }
+                )
+                    .frame(minHeight: 180)
+            } header: {
+                Text("翻譯背景資訊")
+            } footer: {
+                Text("可輸入人物、節目或領域背景，提升翻譯一致性。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .disabled(appState.isCapturing)
+
+            Section {
+                ProfileTextView(
+                    text: $keytermsDraft,
+                    isEditable: !appState.isCapturing,
+                    onEndEditing: {
+                        commitDrafts(to: appState.selectedProfileId)
+                    }
+                )
+                    .frame(minHeight: 180)
+                HStack {
+                    Text("目前：\(keytermsDraftCount) 個")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("建議 20–50 個，總 token 上限 500")
+                        .foregroundColor(.secondary)
+                }
+                .font(.caption)
+            } header: {
+                Text("Deepgram Keyterms（每行一個）")
             }
             .disabled(appState.isCapturing)
 
@@ -361,13 +365,84 @@ struct ProfileSettingsView: View {
             lastSelectedProfileId = appState.selectedProfileId
             loadDrafts()
         }
-        .onChange(of: focusedField) { newValue in
-            if newValue == nil {
-                commitDrafts(to: appState.selectedProfileId)
-            }
-        }
         .onDisappear {
             commitDrafts(to: appState.selectedProfileId)
+        }
+    }
+}
+
+private struct ProfileTextView: NSViewRepresentable {
+    @Binding var text: String
+    var isEditable: Bool
+    var onEndEditing: (() -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.isEditable = isEditable
+        textView.isSelectable = isEditable
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.backgroundColor = isEditable ? NSColor.textBackgroundColor : NSColor.controlBackgroundColor
+        textView.textColor = isEditable ? NSColor.labelColor : NSColor.secondaryLabelColor
+        textView.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        textView.textContainerInset = NSSize(width: 6, height: 6)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.string = text
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .bezelBorder
+        scrollView.drawsBackground = false
+
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+        if textView.isEditable != isEditable {
+            textView.isEditable = isEditable
+        }
+        if textView.isSelectable != isEditable {
+            textView.isSelectable = isEditable
+        }
+        textView.backgroundColor = isEditable ? NSColor.textBackgroundColor : NSColor.controlBackgroundColor
+        textView.textColor = isEditable ? NSColor.labelColor : NSColor.secondaryLabelColor
+        if !isEditable, textView.window?.firstResponder == textView {
+            textView.window?.makeFirstResponder(nil)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        private let parent: ProfileTextView
+
+        init(_ parent: ProfileTextView) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            if parent.text != textView.string {
+                parent.text = textView.string
+            }
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            parent.onEndEditing?()
         }
     }
 }
