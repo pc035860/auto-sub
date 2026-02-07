@@ -26,6 +26,9 @@ class AppState: ObservableObject {
     @Published var isCapturing: Bool = false
     @Published var currentSubtitle: SubtitleEntry?
     @Published var isConfigured: Bool = false
+    @Published var statusMessage: String?
+    @Published var isRecovering: Bool = false
+    @Published var recoveryAttempt: Int = 0
 
     // MARK: - API 設定
     @Published var deepgramApiKey: String = ""

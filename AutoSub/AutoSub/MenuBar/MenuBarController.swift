@@ -77,6 +77,9 @@ final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private var cancellables = Set<AnyCancellable>()
+    private var recoveryTask: Task<Void, Never>?
+    private let maxRecoveryAttempts = 3
+    private let recoveryDelays: [UInt64] = [1_000_000_000, 2_000_000_000, 4_000_000_000]
 
     private let statusMenuItem = NSMenuItem()
     private let profileMenuItem = NSMenuItem()
@@ -89,6 +92,11 @@ final class MenuBarController: NSObject {
     private let statusRowView = StatusMenuItemView()
     private let profileSubmenu = NSMenu()
     private let settingsTarget: MenuActionHandler
+
+    private enum ErrorSource {
+        case audio
+        case python
+    }
 
     init(
         appState: AppState,
@@ -176,6 +184,13 @@ final class MenuBarController: NSObject {
             }
             .store(in: &cancellables)
 
+        appState.$statusMessage
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshStatus()
+            }
+            .store(in: &cancellables)
+
         appState.$errorMessage
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -254,7 +269,10 @@ final class MenuBarController: NSObject {
     }
 
     private func refreshCaptureItem() {
-        captureMenuItem.title = appState.isCapturing ? "停止擷取" : "開始擷取"
+        let shouldRestart = appState.status == .error && !appState.isCapturing
+        captureMenuItem.title = appState.isCapturing
+            ? "停止擷取"
+            : (shouldRestart ? "重新開始擷取" : "開始擷取")
         captureMenuItem.image = NSImage(
             systemSymbolName: appState.isCapturing ? "stop.fill" : "play.fill",
             accessibilityDescription: nil
@@ -306,6 +324,9 @@ final class MenuBarController: NSObject {
     // MARK: - Helpers
 
     private var statusText: String {
+        if let statusMessage = appState.statusMessage, !statusMessage.isEmpty {
+            return statusMessage
+        }
         switch appState.status {
         case .idle: return "待機中"
         case .capturing: return "擷取中"
@@ -332,6 +353,97 @@ final class MenuBarController: NSObject {
         }
     }
 
+    // MARK: - Error Handling & Recovery
+
+    private func makePythonBridgeError(_ message: String) -> NSError {
+        NSError(domain: "PythonBridge", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private func handleCaptureError(_ error: Error, source: ErrorSource) {
+        if appState.isRecovering {
+            if source == .python {
+                return
+            }
+            return
+        }
+
+        guard appState.isCapturing else {
+            appState.status = .error
+            appState.statusMessage = "錯誤已發生"
+            appState.errorMessage = error.localizedDescription
+            return
+        }
+
+        appState.status = .error
+        appState.statusMessage = "錯誤已發生"
+        appState.errorMessage = error.localizedDescription
+
+        startRecoveryFlow()
+    }
+
+    private func startRecoveryFlow() {
+        recoveryTask?.cancel()
+        appState.isRecovering = true
+        appState.recoveryAttempt = 0
+
+        recoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await self.runRecoveryLoop()
+        }
+    }
+
+    private func runRecoveryLoop() async {
+        for attempt in 1...maxRecoveryAttempts {
+            if Task.isCancelled { return }
+
+            await stopCapture()
+
+            appState.recoveryAttempt = attempt
+            appState.status = .warning
+            appState.statusMessage = "正在重新連線 (\(attempt)/\(maxRecoveryAttempts))"
+
+            await startCapture()
+
+            if appState.isCapturing {
+                appState.isRecovering = false
+                appState.recoveryAttempt = 0
+                appState.status = .capturing
+                appState.statusMessage = "已恢復音訊擷取"
+                scheduleStatusMessageClear(expectedMessage: "已恢復音訊擷取", afterSeconds: 3)
+                return
+            }
+
+            appState.status = .warning
+
+            if attempt < maxRecoveryAttempts {
+                let delay = recoveryDelay(for: attempt)
+                try? await Task.sleep(nanoseconds: delay)
+            }
+        }
+
+        appState.isRecovering = false
+        appState.recoveryAttempt = 0
+        appState.status = .error
+        appState.statusMessage = "音訊擷取失敗，點此重新開始"
+        appState.isCapturing = false
+    }
+
+    private func recoveryDelay(for attempt: Int) -> UInt64 {
+        let index = max(0, min(attempt - 1, recoveryDelays.count - 1))
+        return recoveryDelays[index]
+    }
+
+    private func scheduleStatusMessageClear(expectedMessage: String, afterSeconds seconds: UInt64) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            guard let self else { return }
+            if self.appState.statusMessage == expectedMessage {
+                self.appState.statusMessage = nil
+            }
+        }
+    }
+
     private func startCapture() async {
         print("[MenuBarController] startCapture called")
         print("[MenuBarController] pythonBridge is \(pythonBridge == nil ? "nil" : "available")")
@@ -345,6 +457,9 @@ final class MenuBarController: NSObject {
         print("[MenuBarController] Python Bridge found, starting...")
 
         let state = appState
+        if !state.isRecovering {
+            state.statusMessage = nil
+        }
 
         do {
             let profile = state.currentProfile
@@ -366,16 +481,16 @@ final class MenuBarController: NSObject {
                 targetLanguage: profile.targetLanguage
             )
 
-            audioService.onError = { [weak state] error in
+            audioService.onError = { [weak self] error in
                 Task { @MainActor in
-                    state?.status = .error
-                    state?.errorMessage = error.localizedDescription
+                    self?.handleCaptureError(error, source: .audio)
                 }
             }
-            bridge.onError = { [weak state] message in
+            bridge.onError = { [weak self] message in
                 Task { @MainActor in
-                    state?.status = .warning
-                    state?.errorMessage = message
+                    let error = self?.makePythonBridgeError(message)
+                        ?? NSError(domain: "PythonBridge", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
+                    self?.handleCaptureError(error, source: .python)
                 }
             }
 
