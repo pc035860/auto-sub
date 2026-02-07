@@ -5,12 +5,16 @@ Gemini 翻譯模組
 支援上下文修正：翻譯時可同時修正前句翻譯
 """
 
+import concurrent.futures
 import json
 import sys
 from typing import Optional, Tuple
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
+
+# API 呼叫 timeout（秒）
+API_TIMEOUT_SECONDS = 10
 
 
 class TranslationResult(BaseModel):
@@ -152,6 +156,33 @@ class Translator:
         )
         self._total_tokens = 0
         self._context_summary: str = ""  # 上一個 session 的摘要
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+    def _send_message_with_timeout(self, prompt: str, timeout: int = API_TIMEOUT_SECONDS):
+        """發送訊息到 chat session，帶 timeout 機制"""
+        future = self._executor.submit(self._chat.send_message, prompt)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            print(f"[Translator] API call timed out after {timeout} seconds",
+                  file=sys.stderr, flush=True)
+            raise TimeoutError(f"Gemini API call timed out after {timeout} seconds")
+
+    def _generate_content_with_timeout(self, contents, config, timeout: int = API_TIMEOUT_SECONDS):
+        """呼叫 generate_content，帶 timeout 機制"""
+        def do_generate():
+            return self.client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=config,
+            )
+        future = self._executor.submit(do_generate)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            print(f"[Translator] generate_content timed out after {timeout} seconds",
+                  file=sys.stderr, flush=True)
+            raise TimeoutError(f"Gemini generate_content timed out after {timeout} seconds")
 
     def translate(self, text: str) -> str:
         """
@@ -167,14 +198,15 @@ class Translator:
             return ""
 
         try:
-            response = self._chat.send_message(
-                self._simple_translate_template.format(
-                    source_label=self._source_label,
-                    text=text,
-                )
+            prompt = self._simple_translate_template.format(
+                source_label=self._source_label,
+                text=text,
             )
+            print(f"[Translator] Sending message (translate)...", file=sys.stderr, flush=True)
+            response = self._send_message_with_timeout(prompt)
 
             # 追蹤 token 使用量
+            needs_rebuild = False
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 usage = response.usage_metadata
                 total = getattr(usage, 'total_token_count', None)
@@ -190,21 +222,27 @@ class Translator:
                       f"limit: {self.max_context_tokens}",
                       file=sys.stderr, flush=True)
 
-            # 超過閾值就摘要並重建 session
-            if self._total_tokens > self.max_context_tokens:
-                print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing and rebuilding...",
-                      file=sys.stderr, flush=True)
-                self._summarize_and_rebuild()
+                # 標記是否需要重建（但先返回結果）
+                if self._total_tokens > self.max_context_tokens:
+                    needs_rebuild = True
 
             # Chat 全面 JSON mode，解析回應取 current 欄位
             response_text = response.text.strip()
             try:
                 result = json.loads(response_text)
-                return result.get("current", "")
+                translation = result.get("current", "")
             except json.JSONDecodeError:
                 print(f"[Translator] JSON parse error in translate(), using fallback",
                       file=sys.stderr, flush=True)
-                return self._fallback_translate(text)
+                translation = self._fallback_translate(text)
+
+            # 返回結果後才做 context rebuild（避免阻塞翻譯結果返回）
+            if needs_rebuild:
+                print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing and rebuilding...",
+                      file=sys.stderr, flush=True)
+                self._summarize_and_rebuild()
+
+            return translation
 
         except Exception as e:
             print(f"[Translator] Error: {e}, rebuilding session...", file=sys.stderr, flush=True)
@@ -227,10 +265,11 @@ class Translator:
                     parts=[types.Part.from_text(text=self._summarize_prompt)]
                 )
             ]
-            summary_response = self.client.models.generate_content(
-                model=self.model,
+            # 使用 timeout 機制避免卡住
+            summary_response = self._generate_content_with_timeout(
                 contents=summary_contents,
                 config=self._plain_config,  # 無 JSON schema，自由格式文字
+                timeout=20,  # 摘要可能需要較長時間
             )
             self._context_summary = summary_response.text.strip()
             print(f"[Translator] Summary received ({len(self._context_summary)} chars):\n"
@@ -254,7 +293,7 @@ class Translator:
                   file=sys.stderr, flush=True)
             handover_msg = CONTEXT_HANDOVER_TEMPLATE.format(summary=self._context_summary)
             try:
-                self._chat.send_message(handover_msg)
+                self._send_message_with_timeout(handover_msg)
                 print("[Translator] Context handover successful", file=sys.stderr, flush=True)
             except Exception as e:
                 print(f"[Translator] Handover failed: {e}", file=sys.stderr, flush=True)
@@ -275,13 +314,16 @@ class Translator:
     def _fallback_translate(self, text: str) -> str:
         """降級翻譯：不使用 history"""
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=(
-                    f"將以下{self._source_label}翻譯成{self._target_label}，"
-                    f"只輸出翻譯結果：\n{text}"
-                ),
-                config=types.GenerateContentConfig(temperature=0.2),
+            print(f"[Translator] Fallback translate...", file=sys.stderr, flush=True)
+            contents = (
+                f"將以下{self._source_label}翻譯成{self._target_label}，"
+                f"只輸出翻譯結果：\n{text}"
+            )
+            config = types.GenerateContentConfig(temperature=0.2)
+            response = self._generate_content_with_timeout(
+                contents=contents,
+                config=config,
+                timeout=API_TIMEOUT_SECONDS,
             )
             return response.text.strip()
         except Exception as e:
@@ -328,9 +370,11 @@ class Translator:
                     text=current_text,
                 )
 
-            response = self._chat.send_message(prompt)
+            print(f"[Translator] Sending message (context correction)...", file=sys.stderr, flush=True)
+            response = self._send_message_with_timeout(prompt)
 
             # 追蹤 token 使用量
+            needs_rebuild = False
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 usage = response.usage_metadata
                 total = getattr(usage, 'total_token_count', None)
@@ -344,11 +388,9 @@ class Translator:
                       f"input: {input_tokens}, output: {output_tokens}",
                       file=sys.stderr, flush=True)
 
-            # 超過閾值就摘要並重建 session
-            if self._total_tokens > self.max_context_tokens:
-                print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing...",
-                      file=sys.stderr, flush=True)
-                self._summarize_and_rebuild()
+                # 標記是否需要重建（但先返回結果）
+                if self._total_tokens > self.max_context_tokens:
+                    needs_rebuild = True
 
             # 解析 JSON 回應（structured output 保證合法 JSON）
             response_text = response.text.strip()
@@ -366,12 +408,25 @@ class Translator:
                 print(f"[Translator] Parsed - current: {current_trans}, correction: {correction}",
                       file=sys.stderr, flush=True)
 
+                # 返回結果後才做 context rebuild（避免阻塞翻譯結果返回）
+                if needs_rebuild:
+                    print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing...",
+                          file=sys.stderr, flush=True)
+                    self._summarize_and_rebuild()
+
                 return (current_trans, correction)
 
             except json.JSONDecodeError as e:
                 print(f"[Translator] JSON parse error: {e}, using fallback",
                       file=sys.stderr, flush=True)
                 fallback = self._fallback_translate(current_text)
+
+                # 即使解析失敗，也要處理 rebuild
+                if needs_rebuild:
+                    print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing...",
+                          file=sys.stderr, flush=True)
+                    self._summarize_and_rebuild()
+
                 return (fallback, None)
 
         except Exception as e:
