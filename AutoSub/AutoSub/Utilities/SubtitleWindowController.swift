@@ -12,6 +12,8 @@ import SwiftUI
 /// 字幕視窗控制器
 @MainActor
 final class SubtitleWindowController {
+    private let minimumWindowSize = NSSize(width: 100, height: 100)
+
     private var window: NSWindow?
     private var hostingView: NSHostingView<AnyView>?
     private var windowDelegate: SubtitleWindowDelegate?
@@ -224,8 +226,8 @@ final class SubtitleWindowController {
     }
 
     private func clampedWindowSize(for size: NSSize, screenFrame: NSRect) -> NSSize {
-        let minWidth: CGFloat = 400
-        let minHeight: CGFloat = 120
+        let minWidth = minimumWindowSize.width
+        let minHeight = minimumWindowSize.height
         let maxWidth = screenFrame.width * 0.95
         let maxHeight = screenFrame.height * 0.6
 
@@ -239,7 +241,7 @@ final class SubtitleWindowController {
             for: NSSize(width: screenFrame.width, height: screenFrame.height),
             screenFrame: screenFrame
         )
-        window?.contentMinSize = NSSize(width: 400, height: 120)
+        window?.contentMinSize = minimumWindowSize
         window?.contentMaxSize = maxSize
     }
 
