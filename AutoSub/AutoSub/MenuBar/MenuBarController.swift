@@ -66,7 +66,7 @@ final class MenuActionHandler: NSObject {
 }
 
 @MainActor
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, NSMenuDelegate {
     static var shared: MenuBarController?
 
     private let appState: AppState
@@ -80,6 +80,7 @@ final class MenuBarController: NSObject {
     private var recoveryTask: Task<Void, Never>?
     private let maxRecoveryAttempts = 3
     private let recoveryDelays: [UInt64] = [1_000_000_000, 2_000_000_000, 4_000_000_000]
+    private var menuUpdateTimer: Timer?
 
     private let statusMenuItem = NSMenuItem()
     private let profileMenuItem = NSMenuItem()
@@ -173,6 +174,7 @@ final class MenuBarController: NSObject {
         quitMenuItem.action = #selector(quitApp(_:))
         menu.addItem(quitMenuItem)
 
+        menu.delegate = self
         statusItem.menu = menu
     }
 
@@ -329,9 +331,28 @@ final class MenuBarController: NSObject {
         }
         switch appState.status {
         case .idle: return "待機中"
-        case .capturing: return "擷取中"
+        case .capturing:
+            if let startTime = appState.captureStartTime {
+                let elapsed = Date().timeIntervalSince(startTime)
+                return "擷取中 · \(formatDuration(elapsed))"
+            }
+            return "擷取中"
         case .warning: return "警告"
         case .error: return appState.errorMessage ?? "錯誤"
+        }
+    }
+
+    /// 格式化時長為 MM:SS 或 H:MM:SS
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let totalSeconds = Int(seconds)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        } else {
+            return String(format: "%02d:%02d", minutes, secs)
         }
     }
 
@@ -351,6 +372,43 @@ final class MenuBarController: NSObject {
         case .warning: return "exclamationmark.triangle"
         case .error: return "xmark.circle"
         }
+    }
+
+    // MARK: - NSMenuDelegate
+
+    nonisolated func menuNeedsUpdate(_ menu: NSMenu) {
+        Task { @MainActor in
+            refreshStatus()
+        }
+    }
+
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        Task { @MainActor in
+            startMenuUpdateTimer()
+        }
+    }
+
+    nonisolated func menuDidClose(_ menu: NSMenu) {
+        Task { @MainActor in
+            stopMenuUpdateTimer()
+        }
+    }
+
+    @MainActor
+    private func startMenuUpdateTimer() {
+        stopMenuUpdateTimer()
+        menuUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshStatus()
+            }
+        }
+        RunLoop.current.add(menuUpdateTimer!, forMode: .common)
+    }
+
+    @MainActor
+    private func stopMenuUpdateTimer() {
+        menuUpdateTimer?.invalidate()
+        menuUpdateTimer = nil
     }
 
     // MARK: - Error Handling & Recovery
@@ -446,6 +504,9 @@ final class MenuBarController: NSObject {
 
     private func startCapture() async {
         print("[MenuBarController] startCapture called")
+
+        // 取消任何正在進行的淡出動畫
+        subtitleWindowController.cancelFadeOutIfNeeded()
         print("[MenuBarController] pythonBridge is \(pythonBridge == nil ? "nil" : "available")")
 
         guard let bridge = pythonBridge else {
@@ -535,6 +596,7 @@ final class MenuBarController: NSObject {
             }
 
             state.isCapturing = true
+            state.captureStartTime = Date()
             state.status = .capturing
 
         } catch {
@@ -556,7 +618,7 @@ final class MenuBarController: NSObject {
     private func stopCapture() async {
         await audioService.stopCapture()
         pythonBridge?.stop()
-        subtitleWindowController.hide()
+        subtitleWindowController.hideWithFadeOut(delay: 3.0, duration: 2.0)
 
         audioService.onAudioData = nil
         audioService.onError = nil
@@ -568,10 +630,18 @@ final class MenuBarController: NSObject {
         pythonBridge?.onStatusChange = nil
 
         appState.isCapturing = false
+        appState.captureStartTime = nil
         appState.status = .idle
         appState.currentSubtitle = nil
         appState.currentInterim = nil
-        appState.subtitleHistory.removeAll()
+        // 延遲清空字幕歷史，讓淡出動畫期間能看到字幕
+        // delay(3s) + duration(2s) = 5s 後清空
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            // 只在沒有正在擷取時才清空（避免淡出期間重新開始擷取被清空）
+            guard !appState.isCapturing else { return }
+            appState.subtitleHistory.removeAll()
+        }
     }
 }
 
@@ -789,14 +859,16 @@ final class AppLifecycleController {
         appState.$subtitleWindowWidth
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.subtitleWindowController.applyRenderSettings()
+                guard let self else { return }
+                self.subtitleWindowController.applyRenderSettings()
             }
             .store(in: &cancellables)
 
         appState.$subtitleWindowHeight
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.subtitleWindowController.applyRenderSettings()
+                guard let self else { return }
+                self.subtitleWindowController.applyRenderSettings()
             }
             .store(in: &cancellables)
     }

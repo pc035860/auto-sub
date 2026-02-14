@@ -16,7 +16,7 @@ struct Configuration: Codable {
     var subtitleFontSize: CGFloat = 24
     var subtitleWindowWidth: CGFloat = 0
     var subtitleWindowHeight: CGFloat = 0
-    var subtitleWindowOpacity: Double = 0.7
+    var subtitleWindowOpacity: Double = 0.85
     var subtitleHistoryLimit: Int = 3
     var subtitleAutoOpacityByCount: Bool = true
     var showOriginalText: Bool = true
@@ -51,7 +51,7 @@ struct Configuration: Codable {
         subtitleFontSize: CGFloat = 24,
         subtitleWindowWidth: CGFloat = 0,
         subtitleWindowHeight: CGFloat = 0,
-        subtitleWindowOpacity: Double = 0.7,
+        subtitleWindowOpacity: Double = 0.85,
         subtitleHistoryLimit: Int = 3,
         subtitleAutoOpacityByCount: Bool = true,
         showOriginalText: Bool = true,
@@ -122,7 +122,7 @@ struct Configuration: Codable {
         subtitleFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleFontSize) ?? 24
         subtitleWindowWidth = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleWindowWidth) ?? 0
         subtitleWindowHeight = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleWindowHeight) ?? 0
-        subtitleWindowOpacity = try container.decodeIfPresent(Double.self, forKey: .subtitleWindowOpacity) ?? 0.7
+        subtitleWindowOpacity = try container.decodeIfPresent(Double.self, forKey: .subtitleWindowOpacity) ?? 0.85
         subtitleHistoryLimit = try container.decodeIfPresent(Int.self, forKey: .subtitleHistoryLimit) ?? 3
         subtitleAutoOpacityByCount = try container.decodeIfPresent(Bool.self, forKey: .subtitleAutoOpacityByCount) ?? true
         showOriginalText = try container.decodeIfPresent(Bool.self, forKey: .showOriginalText) ?? true

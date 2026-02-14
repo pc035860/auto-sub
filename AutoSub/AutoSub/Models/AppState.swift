@@ -24,6 +24,7 @@ class AppState: ObservableObject {
     // MARK: - 運行狀態
     @Published var status: AppStatus = .idle
     @Published var isCapturing: Bool = false
+    @Published var captureStartTime: Date?
     @Published var currentSubtitle: SubtitleEntry?
     @Published var isConfigured: Bool = false
     @Published var statusMessage: String?
@@ -52,7 +53,7 @@ class AppState: ObservableObject {
     @Published var subtitleFontSize: CGFloat = 24
     @Published var subtitleWindowWidth: CGFloat = 0
     @Published var subtitleWindowHeight: CGFloat = 0
-    @Published var subtitleWindowOpacity: Double = 0.7
+    @Published var subtitleWindowOpacity: Double = 0.85
     @Published var subtitleHistoryLimit: Int = 3 {
         didSet {
             if subtitleHistoryLimit < 1 {

@@ -19,21 +19,12 @@ struct SubtitleOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 解鎖時顯示拖曳把手
-            if !appState.isSubtitleLocked {
-                HStack {
-                    Spacer()
-                    DragHandle {
-                        // 點擊把手鎖定字幕
-                        appState.isSubtitleLocked = true
-                        appState.saveSubtitlePosition()
-                        // 通知視窗控制器更新滑鼠事件處理
-                        NotificationCenter.default.post(name: .subtitleLockStateChanged, object: nil)
-                    }
-                }
-                .padding(.trailing, 8)
-                .padding(.top, 4)
+            HStack {
+                Spacer()
+                LockStateIcon(isLocked: appState.isSubtitleLocked)
             }
+            .padding(.trailing, 8)
+            .padding(.top, 4)
 
             // 字幕內容（帶捲軸）
             ScrollViewReader { proxy in
@@ -102,26 +93,25 @@ struct SubtitleOverlay: View {
                     }
                 }
             }
+
         }
-        .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(appState.subtitleWindowOpacity))
+            ZStack {
+                // 背景填充
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(appState.subtitleWindowOpacity))
+
+                // 解鎖時顯示虛線邊框
+                if !appState.isSubtitleLocked {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            Color.white.opacity(0.5),
+                            style: StrokeStyle(lineWidth: 1, dash: [6, 4])
+                        )
+                }
+            }
         )
-    }
-
-    /// 最大寬度（螢幕 80%）
-    private var maxWidth: CGFloat {
-        let screenWidth = NSScreen.main?.visibleFrame.width ?? 1920
-        let configuredWidth = appState.subtitleWindowWidth > 0 ? appState.subtitleWindowWidth : screenWidth * 0.8
-        return min(configuredWidth, screenWidth * 0.95)
-    }
-
-    /// 最大高度（螢幕 20%）
-    private var maxHeight: CGFloat {
-        let screenHeight = NSScreen.main?.visibleFrame.height ?? 1080
-        let configuredHeight = appState.subtitleWindowHeight > 0 ? appState.subtitleWindowHeight : screenHeight * 0.2
-        return min(configuredHeight, screenHeight * 0.6)
     }
 
     /// 根據索引計算透明度
@@ -203,8 +193,6 @@ struct InterimRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-
-// MARK: - DragHandle
 
 // MARK: - OutlinedText
 
@@ -295,23 +283,21 @@ struct SubtitleText: View {
     }
 }
 
-/// 拖曳把手（點擊可切換鎖定狀態）
-struct DragHandle: View {
-    var onLockToggle: () -> Void
+/// 鎖定狀態圖示（純顯示，不可點擊）
+struct LockStateIcon: View {
+    let isLocked: Bool
 
     var body: some View {
-        Button(action: onLockToggle) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-                .padding(8)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.1))
-                )
-        }
-        .buttonStyle(.plain)
-        .help("點擊鎖定字幕位置")
+        Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(.white.opacity(0.7))
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.white.opacity(0.1))
+            )
+            .allowsHitTesting(false)
+            .help(isLocked ? "字幕已鎖定（請從 Menu Bar 解鎖）" : "字幕已解鎖（請從 Menu Bar 鎖定）")
     }
 }
 
