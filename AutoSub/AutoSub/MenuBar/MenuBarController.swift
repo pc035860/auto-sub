@@ -860,7 +860,6 @@ final class AppLifecycleController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                guard !self.appState.isResizingSubtitle else { return }
                 self.subtitleWindowController.applyRenderSettings()
             }
             .store(in: &cancellables)
@@ -869,7 +868,6 @@ final class AppLifecycleController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                guard !self.appState.isResizingSubtitle else { return }
                 self.subtitleWindowController.applyRenderSettings()
             }
             .store(in: &cancellables)

@@ -21,8 +21,8 @@ cd AutoSub && xcodegen generate
 # 建構應用程式
 xcodebuild -project AutoSub/AutoSub.xcodeproj -scheme AutoSub -configuration Debug build
 
-# 執行應用程式
-open AutoSub/build/Debug/AutoSub.app
+# 執行應用程式（使用 DerivedData 產物）
+open "$(find ~/Library/Developer/Xcode/DerivedData -path '*/Build/Products/Debug/AutoSub.app' | head -n 1)"
 ```
 
 ### Python Backend 測試
@@ -85,7 +85,7 @@ auto-sub/
 │       ├── Utilities/         # 工具類
 │       │   ├── KeyboardShortcuts.swift        # 全域快捷鍵 (⌘⇧S/⌘⇧H)
 │       │   ├── NotificationNames.swift        # 統一通知定義
-│       │   └── SubtitleWindowController.swift # 字幕視窗管理 (拖動+鎖定)
+│       │   └── SubtitleWindowController.swift # 字幕視窗管理 (原生縮放+拖動+鎖定)
 │       └── Resources/backend/  # Python 後端（內嵌）
 │           ├── main.py        # 主程式，stdin/stdout IPC
 │           ├── transcriber.py # Deepgram SDK v5 即時轉錄
@@ -126,8 +126,24 @@ AppState
 SubtitleOverlay (SwiftUI in NSWindow)
     ├─ 歷史字幕堆疊 (透明度遞減)
     ├─ 即時原文 (interim)
-    └─ 自動捲動 + 拖曳定位
+    └─ 自動捲動 + 拖曳定位 + 原生視窗縮放
 ```
+
+## 字幕視窗開發慣例（重要）
+
+- **優先使用 AppKit 原生視窗能力**：拖動與縮放優先交給 `NSWindow` / `NSWindowDelegate`，避免用 SwiftUI `DragGesture` 重造輪子。
+- **單一 frame 控制來源**：同一時間只能有一條路徑改 `window.setFrame`。避免「observer + gesture + notification」多路徑互搶。
+- **Live resize 期間避免程式化回寫 frame**：使用者正在拖拉時，暫停 `applyRenderSettings()` 之類程式化尺寸套用，避免抖動。
+- **尺寸限制放在視窗層**：最小/最大尺寸用 `contentMinSize` / `contentMaxSize`；不要在 `SubtitleOverlay` 根視圖用固定 `maxWidth/maxHeight` 限制視窗縮放。
+- **鎖定策略固定**：鎖定字幕時 `ignoresMouseEvents = true`（click-through）；解鎖後才允許互動與移動。
+- **縮放持久化時機**：在 `windowDidEndLiveResize` 再儲存設定，避免拖拉過程高頻寫入。
+
+## 近期重大變更
+
+- 字幕視窗已從「自製 `ResizeHandle` + resize 通知」遷移為 **原生 `NSWindow` 可縮放**（`.titled + .resizable + .fullSizeContentView`）。
+- `SubtitleWindowController` 現在透過 `NSWindowDelegate` 同步尺寸與儲存，不再依賴 resize 相關通知事件。
+- `NotificationNames` 已移除字幕 resize 專用通知，`AppState` 也移除 `isResizingSubtitle`，縮放狀態改由視窗生命週期事件管理。
+- `SubtitleOverlay` 已移除自製右下角縮放把手；縮放互動改用 macOS 原生視窗邊框/角落。
 
 ## 音訊格式
 
@@ -180,7 +196,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 ### 字幕顯示
 - 歷史字幕堆疊（可調保留筆數），透明度遞減
 - 即時原文顯示（interim），翻譯中狀態
-- 字幕位置可拖曳、鎖定、持久化（UserDefaults）
+- 字幕視窗支援原生縮放、拖曳、鎖定、持久化（UserDefaults + Configuration）
 - 文字邊框（outline）支援，智能自動捲動
 
 ### macOS 要求

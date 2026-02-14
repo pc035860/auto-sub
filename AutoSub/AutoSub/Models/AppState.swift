@@ -86,9 +86,6 @@ class AppState: ObservableObject {
     /// 字幕框位置 Y（nil 表示使用預設位置）
     @Published var subtitlePositionY: CGFloat?
 
-    /// 是否正在拖拉調整視窗大小
-    @Published var isResizingSubtitle: Bool = false
-
     // MARK: - 常數
     // MARK: - 錯誤訊息
     @Published var errorMessage: String?

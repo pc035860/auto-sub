@@ -22,13 +22,4 @@ extension Notification.Name {
 
     /// 字幕鎖定狀態變更
     static let subtitleLockStateChanged = Notification.Name("AutoSub.subtitleLockStateChanged")
-
-    /// 字幕視窗大小調整開始
-    static let subtitleResizeStarted = Notification.Name("AutoSub.subtitleResizeStarted")
-
-    /// 字幕視窗大小調整結束
-    static let subtitleResizeEnded = Notification.Name("AutoSub.subtitleResizeEnded")
-
-    /// 字幕視窗大小調整中（userInfo 包含 width 和 height）
-    static let subtitleResizing = Notification.Name("AutoSub.subtitleResizing")
 }
