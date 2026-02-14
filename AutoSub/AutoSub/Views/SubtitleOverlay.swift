@@ -7,15 +7,22 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct SubtitleOverlay: View {
     @EnvironmentObject var appState: AppState
     @State private var isPinnedToBottom: Bool = true
     @State private var didInitialScroll: Bool = false
+    @State private var resizeStartSize: CGSize = .zero
+    @State private var resizeStartMouseLocation: NSPoint = .zero
+    @State private var isDraggingResize: Bool = false
 
     /// 歷史字幕的透明度（最舊 → 最新）
     private let opacityLevels: [Double] = [0.3, 0.6, 1.0]
     private let minOpacity: Double = 0.3
+
+    /// 最小視窗尺寸
+    private let minWindowSize = CGSize(width: 400, height: 120)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -102,19 +109,88 @@ struct SubtitleOverlay: View {
                     }
                 }
             }
+
+            // 解鎖時顯示拖拉角標
+            if !appState.isSubtitleLocked {
+                HStack {
+                    Spacer()
+                    ResizeHandle(
+                        onDragChanged: { dragValue in
+                            handleResize(dragValue: dragValue)
+                        },
+                        onDragEnded: {
+                            saveResizeResult()
+                        }
+                    )
+                }
+                .padding(.trailing, 4)
+                .padding(.bottom, 4)
+            }
         }
         .frame(maxWidth: maxWidth, maxHeight: maxHeight)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(appState.subtitleWindowOpacity))
+            ZStack {
+                // 背景填充
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(appState.subtitleWindowOpacity))
+
+                // 解鎖時顯示虛線邊框
+                if !appState.isSubtitleLocked {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            Color.white.opacity(0.5),
+                            style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+                        )
+                }
+            }
         )
     }
 
-    /// 最大寬度（螢幕 80%）
+    // MARK: - Resize Handling
+
+    private func handleResize(dragValue _: DragGesture.Value) {
+        // 記錄起始尺寸（首次拖拉時）
+        if !isDraggingResize {
+            isDraggingResize = true
+            NotificationCenter.default.post(name: .subtitleResizeStarted, object: nil)
+            resizeStartMouseLocation = NSEvent.mouseLocation
+            let currentWidth = appState.subtitleWindowWidth > 0
+                ? appState.subtitleWindowWidth
+                : (NSScreen.main?.visibleFrame.width ?? 1200) * 0.8
+            let currentHeight = appState.subtitleWindowHeight > 0
+                ? appState.subtitleWindowHeight
+                : (NSScreen.main?.visibleFrame.height ?? 800) * 0.2
+            resizeStartSize = CGSize(width: currentWidth, height: currentHeight)
+        }
+
+        // 使用螢幕座標避免 SwiftUI 在 macOS 的手勢座標方向差異
+        let currentMouseLocation = NSEvent.mouseLocation
+        let deltaX = currentMouseLocation.x - resizeStartMouseLocation.x
+        let deltaY = currentMouseLocation.y - resizeStartMouseLocation.y
+        let newWidth = max(minWindowSize.width, resizeStartSize.width + deltaX)
+        let newHeight = max(minWindowSize.height, resizeStartSize.height - deltaY)
+
+        // 同時更新 appState（為了下次拖拉的起始值）和通知視窗控制器
+        appState.subtitleWindowWidth = newWidth
+        appState.subtitleWindowHeight = newHeight
+
+        NotificationCenter.default.post(
+            name: .subtitleResizing,
+            object: nil,
+            userInfo: ["width": newWidth, "height": newHeight]
+        )
+    }
+
+    private func saveResizeResult() {
+        isDraggingResize = false
+        NotificationCenter.default.post(name: .subtitleResizeEnded, object: nil)
+    }
+
+    /// 最大寬度（螢幕 80%，但絕對不超過 1200px）
     private var maxWidth: CGFloat {
         let screenWidth = NSScreen.main?.visibleFrame.width ?? 1920
         let configuredWidth = appState.subtitleWindowWidth > 0 ? appState.subtitleWindowWidth : screenWidth * 0.8
-        return min(configuredWidth, screenWidth * 0.95)
+        return min(min(configuredWidth, screenWidth * 0.95), 1200)
     }
 
     /// 最大高度（螢幕 20%）
@@ -312,6 +388,33 @@ struct DragHandle: View {
         }
         .buttonStyle(.plain)
         .help("點擊鎖定字幕位置")
+    }
+}
+
+/// 拖拉角標（右下角調整大小）
+struct ResizeHandle: View {
+    var onDragChanged: (DragGesture.Value) -> Void
+    var onDragEnded: () -> Void
+
+    var body: some View {
+        Image(systemName: "arrow.down.left.and.arrow.up.right")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.white.opacity(0.7))
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.white.opacity(0.15))
+            )
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        onDragChanged(value)
+                    }
+                    .onEnded { _ in
+                        onDragEnded()
+                    }
+            )
+            .help("拖曳調整視窗大小")
     }
 }
 

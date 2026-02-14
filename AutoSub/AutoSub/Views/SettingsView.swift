@@ -496,75 +496,9 @@ struct SubtitleSettingsView: View {
 struct SubtitleRenderSettingsView: View {
     @EnvironmentObject var appState: AppState
 
-    private var screenWidth: CGFloat {
-        NSScreen.main?.visibleFrame.width ?? 1200
-    }
-
-    private var screenHeight: CGFloat {
-        NSScreen.main?.visibleFrame.height ?? 800
-    }
-
-    private var widthRange: ClosedRange<CGFloat> {
-        let minWidth: CGFloat = 400
-        let maxWidth = max(minWidth, screenWidth * 0.95)
-        return minWidth...maxWidth
-    }
-
-    private var heightRange: ClosedRange<CGFloat> {
-        let minHeight: CGFloat = 120
-        let maxHeight = max(minHeight, screenHeight * 0.6)
-        return minHeight...maxHeight
-    }
-
-    private var widthBinding: Binding<CGFloat> {
-        Binding(
-            get: {
-                let defaultWidth = screenWidth * 0.8
-                return appState.subtitleWindowWidth > 0 ? appState.subtitleWindowWidth : defaultWidth
-            },
-            set: { newValue in
-                appState.subtitleWindowWidth = newValue
-            }
-        )
-    }
-
-    private var heightBinding: Binding<CGFloat> {
-        Binding(
-            get: {
-                let defaultHeight = screenHeight * 0.2
-                return appState.subtitleWindowHeight > 0 ? appState.subtitleWindowHeight : defaultHeight
-            },
-            set: { newValue in
-                appState.subtitleWindowHeight = newValue
-            }
-        )
-    }
-
     var body: some View {
         Form {
             Section {
-                HStack {
-                    Text("視窗寬度")
-                    Spacer()
-                    Text("\(Int(widthBinding.wrappedValue)) px")
-                        .foregroundColor(.secondary)
-                }
-                Slider(value: widthBinding, in: widthRange, step: 20)
-                    .onChangeCompat(of: appState.subtitleWindowWidth) {
-                        appState.saveConfiguration()
-                    }
-
-                HStack {
-                    Text("視窗高度")
-                    Spacer()
-                    Text("\(Int(heightBinding.wrappedValue)) px")
-                        .foregroundColor(.secondary)
-                }
-                Slider(value: heightBinding, in: heightRange, step: 10)
-                    .onChangeCompat(of: appState.subtitleWindowHeight) {
-                        appState.saveConfiguration()
-                    }
-
                 HStack {
                     Text("視窗透明度")
                     Spacer()
@@ -577,6 +511,10 @@ struct SubtitleRenderSettingsView: View {
                     }
             } header: {
                 Text("視窗")
+            } footer: {
+                Text("解鎖字幕後可直接拖曳右下角調整大小")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section {

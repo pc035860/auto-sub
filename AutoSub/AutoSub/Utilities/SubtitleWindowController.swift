@@ -17,12 +17,79 @@ final class SubtitleWindowController {
     private var windowDelegate: SubtitleWindowDelegate?
     private weak var appState: AppState?
 
+    /// 淡出任務
+    private var fadeOutTask: Task<Void, Never>?
+    /// 是否正在淡出中
+    private(set) var isFadingOut: Bool = false
+
     /// 初始化
     init() {}
 
     /// 設定 AppState 參考
     func configure(appState: AppState) {
         self.appState = appState
+        setupResizeObservers()
+    }
+
+    private func setupResizeObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleResizeStarted),
+            name: .subtitleResizeStarted,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleResizeEnded),
+            name: .subtitleResizeEnded,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleResizing(_:)),
+            name: .subtitleResizing,
+            object: nil
+        )
+    }
+
+    @objc private func handleResizeStarted() {
+        appState?.isResizingSubtitle = true
+        window?.isMovableByWindowBackground = false
+    }
+
+    @objc private func handleResizeEnded() {
+        appState?.isResizingSubtitle = false
+        if let appState = appState {
+            window?.isMovableByWindowBackground = !appState.isSubtitleLocked
+            appState.saveConfiguration()
+        } else {
+            window?.isMovableByWindowBackground = true
+        }
+    }
+
+    @objc private func handleResizing(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let width = userInfo["width"] as? CGFloat,
+              let height = userInfo["height"] as? CGFloat else { return }
+        Task { @MainActor [weak self] in
+            self?.resizeWindowDirectly(width: width, height: height)
+        }
+    }
+
+    /// 直接調整視窗大小（不透過 Combine observer，避免抖動）
+    private func resizeWindowDirectly(width: CGFloat, height: CGFloat) {
+        guard let window = window else { return }
+
+        let currentFrame = window.frame
+        // 從右下角調整：保持左上角位置不變
+        let newFrame = NSRect(
+            x: currentFrame.origin.x,
+            y: currentFrame.origin.y - (height - currentFrame.height),
+            width: width,
+            height: height
+        )
+
+        window.setFrame(newFrame, display: true)
     }
 
     /// 顯示字幕視窗
@@ -53,10 +120,54 @@ final class SubtitleWindowController {
         window?.orderOut(nil)
     }
 
+    /// 延遲後淡出隱藏字幕視窗
+    /// - Parameters:
+    ///   - delay: 延遲秒數（預設 3 秒）
+    ///   - duration: 淡出動畫秒數（預設 2 秒）
+    func hideWithFadeOut(delay: TimeInterval = 3.0, duration: TimeInterval = 2.0) {
+        // 取消之前的淡出任務
+        fadeOutTask?.cancel()
+        fadeOutTask = Task { [weak self] in
+            guard let self, let window = self.window else { return }
+
+            // 延遲
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+
+            // 檢查是否被取消
+            guard !Task.isCancelled else { return }
+
+            // 執行淡出動畫
+            await MainActor.run {
+                self.isFadingOut = true
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = duration
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    window.animator().alphaValue = 0
+                } completionHandler: { [weak self] in
+                    // 動畫完成後隱藏視窗
+                    window.orderOut(nil)
+                    window.alphaValue = 1.0
+                    Task { @MainActor [weak self] in
+                        self?.isFadingOut = false
+                    }
+                }
+            }
+        }
+    }
+
+    /// 取消淡出並恢復視窗透明度
+    func cancelFadeOutIfNeeded() {
+        fadeOutTask?.cancel()
+        fadeOutTask = nil
+        isFadingOut = false
+        window?.alphaValue = 1.0
+    }
+
     /// 更新滑鼠事件處理（鎖定狀態變更時呼叫）
     func updateMouseEventHandling() {
         guard let appState = appState else { return }
         window?.ignoresMouseEvents = appState.isSubtitleLocked
+        window?.isMovableByWindowBackground = appState.isResizingSubtitle ? false : !appState.isSubtitleLocked
         print("[SubtitleWindow] Mouse events ignored: \(appState.isSubtitleLocked)")
     }
 
@@ -68,14 +179,29 @@ final class SubtitleWindowController {
 
         let newSize = resolvedWindowSize(for: screenFrame)
         let currentFrame = window.frame
-        var newX = currentFrame.midX - newSize.width / 2
-        var newY = currentFrame.origin.y
 
-        // 確保視窗在螢幕範圍內
-        newX = max(screenFrame.minX, min(newX, screenFrame.maxX - newSize.width))
-        newY = max(screenFrame.minY, min(newY, screenFrame.maxY - newSize.height))
+        var newFrame: NSRect
+        // 如果正在拖拉調整大小，保持位置不變
+        if appState?.isResizingSubtitle == true {
+            // 保持位置，只調整大小（從右下角調整）
+            newFrame = NSRect(
+                x: currentFrame.origin.x,
+                y: currentFrame.origin.y - (newSize.height - currentFrame.height),
+                width: newSize.width,
+                height: newSize.height
+            )
+        } else {
+            // 重新計算位置（居中）
+            var newX = currentFrame.midX - newSize.width / 2
+            var newY = currentFrame.origin.y
 
-        let newFrame = NSRect(x: newX, y: newY, width: newSize.width, height: newSize.height)
+            // 確保視窗在螢幕範圍內
+            newX = max(screenFrame.minX, min(newX, screenFrame.maxX - newSize.width))
+            newY = max(screenFrame.minY, min(newY, screenFrame.maxY - newSize.height))
+
+            newFrame = NSRect(x: newX, y: newY, width: newSize.width, height: newSize.height)
+        }
+
         window.setFrame(newFrame, display: true)
     }
 
