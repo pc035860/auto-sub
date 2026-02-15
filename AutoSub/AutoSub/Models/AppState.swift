@@ -8,6 +8,13 @@
 import SwiftUI
 import Combine
 
+/// 單次 transcription Session（用於最近匯出記錄）
+struct TranscriptionSession: Identifiable, Equatable {
+    let id: UUID
+    let startTime: Date
+    let subtitles: [SubtitleEntry]
+}
+
 /// 應用程式狀態
 enum AppStatus {
     case idle           // 待機
@@ -72,6 +79,15 @@ class AppState: ObservableObject {
     /// 字幕歷史記錄（最多保留 30 筆）
     @Published var subtitleHistory: [SubtitleEntry] = []
 
+    // MARK: - Session 匯出用
+    /// Session 完整字幕（用於匯出，不受 subtitleHistoryLimit 限制）
+    @Published var sessionSubtitles: [SubtitleEntry] = []
+    /// 最近 5 筆 transcription（可從 menubar 子選單選擇匯出）
+    @Published var recentTranscriptions: [TranscriptionSession] = []
+
+    /// 避免重複歸檔同一個 session
+    private var lastArchivedSessionStartTime: Date?
+
     // MARK: - Interim（正在說的話）
     /// 當前 interim 文字（正在說的話，尚未 final）
     @Published var currentInterim: String?
@@ -115,6 +131,9 @@ class AppState: ObservableObject {
         let entry = SubtitleEntry(id: id, originalText: text)
         subtitleHistory.append(entry)
 
+        // 同時加入 sessionSubtitles（用於匯出）
+        sessionSubtitles.append(entry)
+
         // 超過最大數量時移除最舊的
         trimSubtitleHistoryIfNeeded()
 
@@ -138,6 +157,11 @@ class AppState: ObservableObject {
             }
             subtitleHistory[index] = updatedEntry
 
+            // 同時更新 sessionSubtitles（用於匯出）
+            if let sessionIndex = sessionSubtitles.firstIndex(where: { $0.id == id }) {
+                sessionSubtitles[sessionIndex] = updatedEntry
+            }
+
             // 若是最新的，也更新 currentSubtitle
             if updatedEntry.id == currentSubtitle?.id {
                 currentSubtitle = updatedEntry
@@ -158,6 +182,11 @@ class AppState: ObservableObject {
             updatedEntry.translatedText = partial
             subtitleHistory[index] = updatedEntry
 
+            // 同時更新 sessionSubtitles（用於匯出）
+            if let sessionIndex = sessionSubtitles.firstIndex(where: { $0.id == id }) {
+                sessionSubtitles[sessionIndex] = updatedEntry
+            }
+
             // 若是最新的，也更新 currentSubtitle
             if updatedEntry.id == currentSubtitle?.id {
                 currentSubtitle = updatedEntry
@@ -174,6 +203,36 @@ class AppState: ObservableObject {
         if subtitleHistory.count > subtitleHistoryLimit {
             subtitleHistory = Array(subtitleHistory.suffix(subtitleHistoryLimit))
         }
+    }
+
+    /// 清空 Session 字幕（開始新 Session 時呼叫）
+    func clearSession() {
+        sessionSubtitles.removeAll()
+        subtitleHistory.removeAll()
+        currentSubtitle = nil
+        currentInterim = nil
+        captureStartTime = nil
+    }
+
+    /// 將當前 Session 歸檔到最近 transcription（最多 5 筆）
+    func archiveCurrentSessionIfNeeded() {
+        guard let startTime = captureStartTime, !sessionSubtitles.isEmpty else {
+            return
+        }
+        guard lastArchivedSessionStartTime != startTime else {
+            return
+        }
+
+        let archived = TranscriptionSession(
+            id: UUID(),
+            startTime: startTime,
+            subtitles: sessionSubtitles
+        )
+        recentTranscriptions.insert(archived, at: 0)
+        if recentTranscriptions.count > 5 {
+            recentTranscriptions = Array(recentTranscriptions.prefix(5))
+        }
+        lastArchivedSessionStartTime = startTime
     }
 
     // MARK: - 字幕位置管理

@@ -66,17 +66,21 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
     // 錯誤記錄（避免大量 log，每 100 幀記錄一次）
     private var errorCount: Int = 0
     private let errorLogInterval: Int = 100
+    /// VAD 靜音閾值：低於此 RMS 視為靜音，不送出到 STT
+    private let vadSilenceThreshold: Float
 
     // MARK: - Init
 
     init(
         onAudioData: ((Data) -> Void)? = nil,
         onVolumeLevel: ((Float) -> Void)? = nil,
-        onError: ((Error) -> Void)? = nil
+        onError: ((Error) -> Void)? = nil,
+        vadSilenceThreshold: Float = 0.01
     ) {
         self.onAudioData = onAudioData
         self.onVolumeLevel = onVolumeLevel
         self.onError = onError
+        self.vadSilenceThreshold = vadSilenceThreshold
         super.init()
     }
 
@@ -152,6 +156,11 @@ final class AudioStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
                 // 計算 RMS 音量
                 let rms = calculateRMS(pcmData)
                 onVolumeLevel?(rms)
+
+                // VAD：靜音片段不送 Deepgram，降低 API 成本
+                guard rms >= vadSilenceThreshold else {
+                    return
+                }
 
                 // 回呼音訊資料
                 onAudioData?(pcmData)
@@ -381,7 +390,8 @@ class AudioCaptureService: NSObject, ObservableObject {
                 Task { @MainActor in
                     self?.handleStreamError(error)
                 }
-            }
+            },
+            vadSilenceThreshold: silenceThreshold
         )
 
         // 6. 建立串流

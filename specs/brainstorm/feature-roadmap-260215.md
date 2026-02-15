@@ -10,7 +10,10 @@
 
 本次腦力激盪聚焦 Auto-Sub 的**功能面未來方向**（有別於前兩輪的 UI/UX 改進）。五位 teammates 共提出 14 個功能提案，經 Devil's Advocate 嚴格批判後，精煉為 **2 個立即執行項 + 5 個驗證後執行項 + 2 個低優先項**，否決 5 個提案。
 
-**狀態更新（2026-02-15）**：Tier 1 的 **1.1 Streaming Translation 已完成實作並合併**。
+**狀態更新（2026-02-16）**：
+- Tier 1 的 **1.1 Streaming Translation 已完成實作並合併**
+- Tier 2 的 **2.2 VAD 靜音偵測（最簡版）已完成**
+- Tier 2 的 **2.3 SRT 匯出已擴充為最近 5 筆 transcription 可選匯出**（自動儲存待做）
 
 **Devil's Advocate 核心立場**：做 2 件事做到極致，比做 7 件事都半調子好。Auto-Sub 現在最需要的是讓翻譯**更快**出現、讓翻譯**更準確**。其他的，等使用者回饋再說。
 
@@ -109,7 +112,7 @@
 
 ---
 
-### 2.2 VAD 靜音偵測（最簡版）
+### 2.2 VAD 靜音偵測（最簡版）✅ 已完成（2026-02-16）
 
 **問題**：目前所有音訊都送 Deepgram API，包括靜音段，浪費 API 費用。
 
@@ -127,9 +130,14 @@
 **難度**：低
 **前提**：需測量靜音過濾對 API 成本和 STT 準確率的實際影響
 
+**完成狀態（2026-02-16）**：
+- ✅ 已在 `AudioStreamOutput.stream()` 加入 RMS 閾值判斷
+- ✅ 低於閾值的音訊段不再送往 Deepgram（僅保留本地音量狀態更新）
+- ⏳ 待驗證：實際 API 成本下降幅度與 STT 準確率影響
+
 ---
 
-### 2.3 字幕自動儲存 + SRT 匯出（最簡版）
+### 2.3 字幕自動儲存 + SRT 匯出（最簡版）🔄 Phase 1 已完成
 
 **問題**：字幕只存記憶體，停止後消失。
 
@@ -147,21 +155,57 @@
 **難度**：低-中
 **前提**：確認使用者確實有回顧字幕的需求
 
+**Phase 1 完成狀態（2026-02-16）**：
+- ✅ Menu Bar 新增「匯出為 SRT...」選項
+- ✅ 支援三種匯出模式：雙語、僅原文、僅翻譯
+- ✅ `sessionSubtitles` 儲存完整 Session（不受 `subtitleHistoryLimit` 限制）
+- ✅ 停止擷取後保留字幕內容，開始新 Session 時才清空
+- ✅ Menu Bar 匯出改為子選單，可選最近 5 筆 transcription（以開始時間標示）
+- ⏳ Phase 2 待做：自動儲存到 JSON（目前 App 關閉後內容消失）
+
 ---
 
-### 2.4 Apple SpeechAnalyzer 評估（macOS 26 準備）
+### 2.4 Apple SpeechAnalyzer 評估（macOS 26 準備）🔴 現階段不建議採用
 
 **這不是立即實作項，而是技術評估任務。**
 
 Tech-Researcher 發現 Apple 在 WWDC 2025 推出 SpeechAnalyzer API，處理 34 分鐘影片僅 45 秒，比 Whisper 快 55%，原生 Swift API。
 
-**評估項目**：
-- macOS 26 (Tahoe) 正式發布後確認日語支援
-- 測試即時 STT 的延遲和準確率
-- 評估是否能替代 Deepgram 作為免費 STT 後端
-- 若可行，可實現「混合架構」：Apple SpeechAnalyzer（免費本地 STT）+ Gemini（雲端翻譯）
+**深入評估結果（2026-02-16，5 人團隊研究）**：
 
-**來源**：MacStories 實測、WWDC25 SpeechAnalyzer Session
+| 維度 | SpeechAnalyzer | Deepgram Nova-3 | 勝者 |
+|------|---------------|-----------------|------|
+| 日語 WER | 無數據（推估 15-20%） | **4.8%**（乾淨）/ 11.9%（噪音） | Deepgram |
+| 即時延遲 | ~2.1s（finalized） | **~300ms** | Deepgram |
+| Keyterm 提示詞 | ❌ 不支援 | ✅ 最多 100 個 | Deepgram |
+| 斷句控制 | ❌ 不可自訂 | ✅ endpointing/utterance_end 可調 | Deepgram |
+| 成本 | **免費** | $33.12/月（2h/天） | SpeechAnalyzer |
+| 隱私 | **音訊不離開裝置** | 音訊上傳雲端 | SpeechAnalyzer |
+| 離線 | **✅ 完全支援** | ❌ 需要網路 | SpeechAnalyzer |
+
+**不建議採用的三大理由**：
+1. **延遲**：即時字幕需 <500ms，SpeechAnalyzer 2.1s 不達標（7 倍差距）
+2. **Keyterm**：動漫角色名辨識是核心體驗，SpeechAnalyzer 完全不支援（連前代 SFSpeechRecognizer 有的 Custom Vocabulary 都移除了）
+3. **日語品質**：零 benchmark，英語 WER 14% 已是商業 STT 中下水準
+
+**Devil's Advocate 補充**：
+- 「免費」的隱性成本：遷移工程 2-4 週，雙引擎維護 2-3 倍成本，6-12 個月才回本
+- 隱私提升「半真半假」：音訊是系統播放的影音（非私密語音），翻譯文字仍送 Google 雲端
+- Apple API 歷史 breaking changes 頻繁（iOS 18.0 破壞 SFSpeechRecognizer），目前仍 Beta 3
+
+**建議行動**：
+- **短期**：繼續使用 Deepgram，不投入遷移
+- **中期（6-12 個月）**：監控 SpeechAnalyzer 正式版日語表現
+- **長期（12+ 個月）**：滿足以下 3/5 條件再啟動 POC
+  1. Apple 釋出日語 WER benchmark 且 ≤ 8%
+  2. SpeechAnalyzer 正式版穩定 6 個月以上
+  3. Apple 加入 Custom Vocabulary / Keyterm 等效功能
+  4. macOS 26+ 採用率 > 80%
+  5. 有明確成本壓力需削減 Deepgram 費用
+
+**值得保留的想法**：SpeechDetector (VAD) 可獨立使用輔助現有靜音過濾；STT Provider Protocol 抽象層可為未來留彈性（但不急）
+
+**來源**：MacStories 實測、WWDC25 Session 277、Apple 官方文件、Argmax 效能比較、Deepgram 多語言指南、Anton Gubarenko's iOS 26 Guide、Callstack 實作指南
 
 ---
 
@@ -215,17 +259,17 @@ Phase 1（進行中，直接強化核心）
 
 Phase 2（驗證數據後決定）
 ├── 2.1 多語言辨識 A/B 測試（改一個設定值）
-├── 2.2 VAD 靜音偵測（利用現有 calculateRMS()）
-└── 2.3 字幕自動儲存 + SRT 匯出
+├── 2.2 VAD 靜音偵測 ✅（利用現有 calculateRMS()，靜音段已過濾）
+└── 2.3 字幕匯出 ✅（最近 5 筆可選匯出；自動儲存待做）
 
 Phase 3（低優先，有空再做）
 ├── 3.1 Profile 預設模板（3-5 個內建模板）
 └── 3.2 使用時長計數器
 
 長期觀察
-├── Apple SpeechAnalyzer（macOS 26 發布後評估）
+├── Apple SpeechAnalyzer 🔴（已評估，現階段不採用，待日語品質+keyterm支援改善）
 ├── Gemini Live API（直接音訊→翻譯，等穩定性改善）
-└── 混合 Edge+Cloud 架構（本地 STT + 雲端翻譯）
+└── 混合 Edge+Cloud 架構（本地 STT + 雲端翻譯，待 SpeechAnalyzer 成熟）
 ```
 
 ---
