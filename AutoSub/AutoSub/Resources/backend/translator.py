@@ -499,7 +499,7 @@ class Translator:
 
         try:
             # 根據是否有前句決定使用哪個 prompt
-            if prev_text and prev_translation:
+            if prev_text is not None and prev_translation is not None:
                 prompt = self._context_correction_template.format(
                     source_label=self._source_label,
                     target_label=self._target_label,
@@ -603,7 +603,7 @@ class Translator:
             return ("", None)
 
         # 根據是否有前句決定使用哪個 prompt
-        if prev_text and prev_translation:
+        if prev_text is not None and prev_translation is not None:
             prompt = self._context_correction_template.format(
                 source_label=self._source_label,
                 target_label=self._target_label,

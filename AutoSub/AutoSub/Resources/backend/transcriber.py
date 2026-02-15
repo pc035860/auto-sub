@@ -69,7 +69,7 @@ class Transcriber:
 
         # Phase 2: 追蹤前一句資訊（用於上下文修正）
         # 格式: (id, text, translation)
-        self._previous_transcript: Optional[tuple[str, str, str]] = None
+        self._previous_transcript: Optional[tuple[str, str, Optional[str]]] = None
 
     def start(self) -> None:
         """啟動 Deepgram 連線"""
@@ -216,10 +216,15 @@ class Transcriber:
         if self.on_transcript and full_transcript.strip():
             # 生成 UUID 並傳給回呼
             transcript_id = str(uuid.uuid4())
+            previous = self._previous_transcript
+
+            # 先記錄當前句，讓 callback 內 update_previous_translation()
+            # 可以正確更新到「當前句」的 translation。
+            self._previous_transcript = (transcript_id, full_transcript, None)
 
             # Phase 2: 傳遞前一句資訊（若有）
-            if self._previous_transcript:
-                prev_id, prev_text, prev_translation = self._previous_transcript
+            if previous:
+                prev_id, prev_text, prev_translation = previous
                 self.on_transcript(
                     transcript_id, full_transcript,
                     prev_id, prev_text, prev_translation
@@ -230,10 +235,6 @@ class Transcriber:
                     transcript_id, full_transcript,
                     None, None, None
                 )
-
-            # 注意：translation 會由 main.py 回填
-            # 暫時只記錄 id 和 text，translation 設為 None
-            self._previous_transcript = (transcript_id, full_transcript, None)
 
     def update_previous_translation(self, translation: str) -> None:
         """更新前一句的翻譯結果（由 main.py 呼叫）"""
