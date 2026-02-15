@@ -356,37 +356,46 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return
         }
 
-        let panel = NSSavePanel()
-        panel.title = "匯出字幕"
-        panel.message = "選擇儲存位置與匯出內容"
+        // Menu Bar App 先啟用前景，避免 Save Panel 被其他視窗壓在後方。
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+        NSApp.activate(ignoringOtherApps: true)
 
-        // 預設檔名
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withYear, .withMonth, .withDay, .withTime]
-        let timestamp = dateFormatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = "AutoSub_\(timestamp).srt"
+        // 避免在 NSMenu tracking loop 內直接開 panel，下一個 runloop 再顯示更穩定。
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
 
-        panel.allowedContentTypes = [.init(filenameExtension: "srt")!]
-        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        panel.canCreateDirectories = true
+            let panel = NSSavePanel()
+            panel.title = "匯出字幕"
+            panel.message = "選擇儲存位置與匯出內容"
 
-        // 建立 accessory view（Popup Button）
-        let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
+            // 預設檔名
+            let dateFormatter = ISO8601DateFormatter()
+            dateFormatter.formatOptions = [.withYear, .withMonth, .withDay, .withTime]
+            let timestamp = dateFormatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            panel.nameFieldStringValue = "AutoSub_\(timestamp).srt"
 
-        let label = NSTextField(labelWithString: "匯出內容：")
-        label.frame = NSRect(x: 0, y: 6, width: 75, height: 20)
-        label.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        accessoryView.addSubview(label)
+            panel.allowedContentTypes = [.init(filenameExtension: "srt")!]
+            panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            panel.canCreateDirectories = true
 
-        let popup = NSPopUpButton(frame: NSRect(x: 80, y: 4, width: 210, height: 24))
-        popup.addItems(withTitles: ExportMode.allCases.map { $0.rawValue })
-        popup.selectItem(at: 0)  // 預設選「雙語」
-        accessoryView.addSubview(popup)
+            // 建立 accessory view（Popup Button）
+            let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 32))
 
-        panel.accessoryView = accessoryView
+            let label = NSTextField(labelWithString: "匯出內容：")
+            label.frame = NSRect(x: 0, y: 6, width: 75, height: 20)
+            label.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            accessoryView.addSubview(label)
 
-        panel.begin { [weak self] response in
-            guard let self, response == .OK, let url = panel.url else { return }
+            let popup = NSPopUpButton(frame: NSRect(x: 80, y: 4, width: 210, height: 24))
+            popup.addItems(withTitles: ExportMode.allCases.map { $0.rawValue })
+            popup.selectItem(at: 0)  // 預設選「雙語」
+            accessoryView.addSubview(popup)
+
+            panel.accessoryView = accessoryView
+
+            let response = panel.runModal()
+            guard response == .OK, let url = panel.url else { return }
+
             let mode = ExportMode.allCases[popup.indexOfSelectedItem]
             let content = ExportService.exportToSRT(
                 self.appState.sessionSubtitles,
