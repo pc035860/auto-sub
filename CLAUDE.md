@@ -113,15 +113,17 @@ PythonBridgeService.stdin
     ↓
 main.py → transcriber.py (Deepgram WebSocket)
     ↓ transcript (id, text) + interim (即時文字)
-translator.py (Gemini Chat API, Structured Output)
-    ↓ JSON Lines
+translator.py (Gemini Streaming API, Structured Output)
+    ↓ JSON Lines (streaming + final)
 PythonBridgeService.stdout
-    ↓ {"type":"subtitle","id":"...","original":"...","translation":"..."}
+    ↓ {"type":"translation_streaming","id":"...","partial":"..."} (即時更新)
+    ↓ {"type":"subtitle","id":"...","original":"...","translation":"..."} (完成)
     ↓ {"type":"interim","text":"..."}
 AppState
-    ├─ addTranscript()      → subtitleHistory (最多 N 筆)
-    ├─ updateTranslation()  → 更新翻譯 + 可選上下文修正
-    └─ updateInterim()      → currentInterim (即時顯示)
+    ├─ addTranscript()           → subtitleHistory (最多 N 筆)
+    ├─ updateStreamingTranslation() → 即時更新 (monotonic growth check)
+    ├─ updateTranslation()       → 最終翻譯 + 可選上下文修正
+    └─ updateInterim()           → currentInterim (即時顯示)
     ↓
 SubtitleOverlay (SwiftUI in NSWindow)
     ├─ 歷史字幕堆疊 (透明度遞減)
@@ -140,6 +142,8 @@ SubtitleOverlay (SwiftUI in NSWindow)
 
 ## 近期重大變更
 
+- **Streaming Translation (2026-02-15)**：翻譯改用 Gemini Streaming API，邊收到回應邊更新 UI，大幅改善使用者體驗。詳見 [`docs/streaming-translation-guide.md`](docs/streaming-translation-guide.md)。
+- **Streaming 品質提升發現**：Streaming 模式下 Gemini 2.5 Flash Lite 翻譯品質從 ~60 分提升到 ~80 分，接近 Flash 3 水準。
 - 字幕視窗已從「自製 `ResizeHandle` + resize 通知」遷移為 **原生 `NSWindow` 可縮放**（`.titled + .resizable + .fullSizeContentView`）。
 - `SubtitleWindowController` 現在透過 `NSWindowDelegate` 同步尺寸與儲存，不再依賴 resize 相關通知事件。
 - `NotificationNames` 已移除字幕 resize 專用通知，`AppState` 也移除 `isResizingSubtitle`，縮放狀態改由視窗生命週期事件管理。
@@ -160,6 +164,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 **stdout (Python → Swift)**：JSON Lines
 ```json
 {"type": "transcript", "id": "uuid", "text": "原文"}
+{"type": "translation_streaming", "id": "uuid", "partial": "部分翻譯（即時更新）"}
 {"type": "subtitle", "id": "uuid", "original": "原文", "translation": "翻譯"}
 {"type": "translation_update", "id": "prev-uuid", "translation": "修正後的前句翻譯"}
 {"type": "interim", "text": "正在說的話（即時）"}
@@ -179,11 +184,14 @@ SubtitleOverlay (SwiftUI in NSWindow)
 
 ### Gemini（translator.py）
 - 預設模型：`gemini-2.5-flash-lite-preview-09-2025`，可在設定中切換
+- **Streaming API**：使用 `send_message_stream()` 即時返回翻譯結果，支援 50ms debounce UI 更新
+- **Streaming 品質提升**：Streaming 模式下 Flash Lite 翻譯品質從 ~60 分提升到 ~80 分（接近 Flash 3）
 - 使用 Structured Output (Pydantic `TranslationResult`) 確保 JSON 回應格式
 - Chat Session 保持上下文，context 超過可配置上限（預設 20K token）自動摘要重建
 - 翻譯策略：人名音譯一致性、台灣常見譯法
 - 上下文修正：翻譯時可同時修正前句翻譯（誤譯、語意不通、人名不一致）
 - Thinking 配置：Gemini 3 使用 `thinking_level="minimal"`，Gemini 2.5 使用 `thinking_budget=0`
+- 詳細文件：[`docs/streaming-translation-guide.md`](docs/streaming-translation-guide.md)
 
 ### Profile 系統
 - 每個 Profile 包含：翻譯背景、keyterm 提示詞、來源/目標語言、Deepgram 斷句參數
