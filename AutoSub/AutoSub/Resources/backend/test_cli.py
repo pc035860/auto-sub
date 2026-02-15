@@ -15,9 +15,6 @@ import subprocess
 import sys
 import time
 
-from transcriber import Transcriber
-from translator import Translator
-
 # 音訊格式常數
 SAMPLE_RATE = 24000
 CHANNELS = 2
@@ -28,6 +25,18 @@ CHUNK_SIZE = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 10
 
 class TestCLI:
     def __init__(self):
+        try:
+            from transcriber import Transcriber
+            from translator import Translator
+        except ModuleNotFoundError as e:
+            print(f"錯誤: 缺少依賴套件 ({e.name})")
+            print("請先安裝 backend 依賴：")
+            print("  cd AutoSub/AutoSub/Resources/backend")
+            print("  python3 -m venv .venv && source .venv/bin/activate")
+            print("  pip install -r requirements.txt")
+            sys.exit(1)
+
+        self._transcriber_cls = Transcriber
         self.deepgram_key = os.environ.get("DEEPGRAM_API_KEY")
         self.gemini_key = os.environ.get("GEMINI_API_KEY")
 
@@ -86,7 +95,7 @@ class TestCLI:
             stderr=subprocess.DEVNULL,
         )
 
-        with Transcriber(
+        with self._transcriber_cls(
             api_key=self.deepgram_key,
             language="ja",
             on_transcript=self.on_transcript,
