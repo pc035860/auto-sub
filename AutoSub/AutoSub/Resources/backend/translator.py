@@ -29,8 +29,7 @@ SYSTEM_INSTRUCTION_TEMPLATE = """你是專業的{source_label}即時字幕翻譯
 2. 人名保留原文發音的音譯，前後文中同一人名請保持一致
 3. 作品名、專有名詞使用常見譯法
 4. 只輸出翻譯結果，不要加任何解釋
-5. 若句子明顯不完整，可根據上下文適當補充或延續前句
-
+5. 若句子明顯不完整，可根據上下文適當補充或延續前句{keyterms_block}
 注意：這是即時字幕翻譯，請參考之前的對話歷史保持翻譯一致性。{context_block}"""
 
 SUMMARIZE_PROMPT_TEMPLATE = """請根據以上翻譯歷史，整理：
@@ -95,6 +94,7 @@ class Translator:
         target_language: str = "zh-TW",
         max_context_tokens: int = 20_000,
         translation_context: str = "",
+        keyterms: Optional[list[str]] = None,
     ):
         """
         初始化翻譯器
@@ -106,6 +106,7 @@ class Translator:
             target_language: 翻譯目標語言
             max_context_tokens: 最大 context tokens 閾值 (預設 20K)
             translation_context: 翻譯背景資訊（可空）
+            keyterms: 重要詞彙提示清單（可空）
         """
         self.client = genai.Client(api_key=api_key)
         self.model = model
@@ -115,12 +116,23 @@ class Translator:
 
         source_label = LANGUAGE_LABELS.get(source_language, source_language)
         target_label = LANGUAGE_LABELS.get(target_language, target_language)
+
+        # 處理背景資訊
         context_block = ""
         if translation_context and translation_context.strip():
             context_block = f"\n\n背景資訊：\n{translation_context.strip()}"
+
+        # 處理 keyterms（取前 10 個，注入翻譯規則）
+        keyterms_block = ""
+        if keyterms:
+            top_keyterms = keyterms[:10]
+            keyterms_text = "、".join(top_keyterms)
+            keyterms_block = f"\n6. 重要詞彙提示：{keyterms_text}，請在翻譯中保持這些詞彙的一致性。\n"
+
         self._system_instruction = SYSTEM_INSTRUCTION_TEMPLATE.format(
             source_label=source_label,
             target_label=target_label,
+            keyterms_block=keyterms_block,
             context_block=context_block,
         )
         self._summarize_prompt = SUMMARIZE_PROMPT_TEMPLATE.format(
@@ -167,6 +179,137 @@ class Translator:
             print(f"[Translator] API call timed out after {timeout} seconds",
                   file=sys.stderr, flush=True)
             raise TimeoutError(f"Gemini API call timed out after {timeout} seconds")
+
+    def _send_message_stream_with_timeout(
+        self,
+        prompt: str,
+        timeout: int = API_TIMEOUT_SECONDS,
+        on_chunk=None
+    ):
+        """Streaming 版本，每收到 chunk 呼叫 callback，支援 timeout 和 token 追蹤
+
+        使用 producer-consumer 模式確保 timeout 在 iterator 阻塞時也能生效。
+        Timeout 後會等待 producer 收斂並重建 session，避免並發存取問題。
+        """
+        import time
+        import threading
+        import queue
+
+        accumulated = ""
+        last_chunk = None
+        chunk_queue = queue.Queue()
+        exception_holder = [None]  # 用 list 共享例外
+        done_flag = [False]
+        cancel_flag = [False]  # 用於通知 producer 取消
+
+        # 重要：在啟動 thread 前先 capture chat reference
+        # 避免 producer 在 rebuild 後存取到新的 chat
+        chat_ref = self._chat
+
+        def producer():
+            """在背景執行緒中迭代 streaming response"""
+            try:
+                # 在呼叫 send_message_stream 前先檢查是否已取消
+                if cancel_flag[0]:
+                    chunk_queue.put(('cancelled', None))
+                    return
+
+                response = chat_ref.send_message_stream(prompt)
+                for chunk in response:
+                    # 檢查是否被取消
+                    if cancel_flag[0]:
+                        chunk_queue.put(('cancelled', None))
+                        return
+                    chunk_queue.put(('chunk', chunk))
+                chunk_queue.put(('done', None))
+            except Exception as e:
+                if not cancel_flag[0]:  # 只在非取消狀態下記錄例外
+                    exception_holder[0] = e
+                    chunk_queue.put(('error', None))
+            finally:
+                done_flag[0] = True
+
+        # 啟動 producer 執行緒
+        thread = threading.Thread(target=producer, daemon=True)
+        thread.start()
+        start_time = time.time()
+
+        try:
+            # Consumer: 從 queue 取出 chunks，並檢查 timeout
+            while True:
+                # 檢查 timeout（即使 queue.get 阻塞也會在每次迭代檢查）
+                if time.time() - start_time > timeout:
+                    raise TimeoutError(f"Streaming exceeded {timeout}s")
+
+                try:
+                    # 使用短 timeout 的 get，讓我們可以定期檢查超時
+                    msg_type, data = chunk_queue.get(timeout=0.1)
+                except queue.Empty:
+                    # Queue 空且 producer 已結束 → 異常結束
+                    if done_flag[0]:
+                        if exception_holder[0]:
+                            raise exception_holder[0]
+                        break
+                    continue
+
+                if msg_type == 'done':
+                    break
+                elif msg_type == 'error':
+                    if exception_holder[0]:
+                        raise exception_holder[0]
+                    break
+                elif msg_type == 'cancelled':
+                    break
+                elif msg_type == 'chunk':
+                    chunk = data
+                    chunk_text = chunk.text or ""
+                    accumulated += chunk_text
+                    if on_chunk and chunk_text:
+                        on_chunk(chunk_text)
+                    last_chunk = chunk
+
+            # Token 追蹤（在最後一個 chunk）
+            usage_metadata = None
+            if last_chunk and hasattr(last_chunk, 'usage_metadata'):
+                usage_metadata = last_chunk.usage_metadata
+
+            return accumulated, usage_metadata
+
+        except TimeoutError:
+            # Timeout 後：通知 producer 取消並等待收斂
+            cancel_flag[0] = True
+            # 等待 producer 結束（最多 0.5 秒）
+            thread.join(timeout=0.5)
+            # 重建 session 確保狀態乾淨
+            print("[Translator] Streaming timeout, rebuilding session...", file=sys.stderr, flush=True)
+            self._rebuild_session()
+            raise
+
+    def _extract_partial_current(self, accumulated_json: str) -> Optional[str]:
+        """從不完整 JSON 中提取 current 欄位（用於 streaming 更新）"""
+        import re
+        # 嘗試解析完整 JSON
+        try:
+            result = json.loads(accumulated_json.strip())
+            return result.get("current", "")
+        except json.JSONDecodeError:
+            pass
+
+        # 用正則提取 current 欄位
+        # 匹配 "current": "..." 或 "current":'...'
+        match = re.search(r'"current"\s*:\s*"((?:[^"\\]|\\.)*)', accumulated_json)
+        if match:
+            # 取得目前累積的字串（可能不完整）
+            partial_value = match.group(1)
+            # 處理轉義字元
+            try:
+                # 嘗試解碼 JSON 字串轉義
+                partial_value = json.loads(f'"{partial_value}"')
+            except json.JSONDecodeError:
+                pass
+            return partial_value
+
+        return None
 
     def _generate_content_with_timeout(self, contents, config, timeout: int = API_TIMEOUT_SECONDS):
         """呼叫 generate_content，帶 timeout 機制"""
@@ -434,3 +577,100 @@ class Translator:
             # 發生錯誤時，嘗試用舊方法翻譯
             fallback = self._fallback_translate(current_text)
             return (fallback, None)
+
+    def translate_with_context_correction_streaming(
+        self,
+        current_text: str,
+        prev_text: Optional[str] = None,
+        prev_translation: Optional[str] = None,
+        on_streaming_update=None
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Streaming 翻譯，支援即時回饋 + token 追蹤
+
+        Args:
+            current_text: 當前要翻譯的原文
+            prev_text: 前句原文（可選）
+            prev_translation: 前句翻譯（可選）
+            on_streaming_update: callback(partial_translation, correction) 用於即時更新
+
+        Returns:
+            (current_translation, corrected_previous_translation or None)
+        """
+        import time
+
+        if not current_text.strip():
+            return ("", None)
+
+        # 根據是否有前句決定使用哪個 prompt
+        if prev_text and prev_translation:
+            prompt = self._context_correction_template.format(
+                source_label=self._source_label,
+                target_label=self._target_label,
+                current_text=current_text,
+                prev_text=prev_text,
+                prev_translation=prev_translation
+            )
+        else:
+            prompt = self._simple_translate_template.format(
+                source_label=self._source_label,
+                text=current_text,
+            )
+
+        # 嘗試 streaming，失敗則降級為 blocking
+        try:
+            accumulated_json = ""
+            last_update_time = time.time()
+            DEBOUNCE_MS = 0.05  # 50ms debounce
+
+            def on_chunk(chunk_text: str):
+                nonlocal accumulated_json, last_update_time
+                accumulated_json += chunk_text
+
+                # Debounce: 50ms 內不重複更新
+                if time.time() - last_update_time < DEBOUNCE_MS:
+                    return
+
+                # 嘗試解析或用正則提取 current 欄位
+                partial = self._extract_partial_current(accumulated_json)
+                if partial and on_streaming_update:
+                    on_streaming_update(partial, None)
+                    last_update_time = time.time()
+
+            print(f"[Translator] Streaming message (context correction)...", file=sys.stderr, flush=True)
+            response_text, usage_metadata = self._send_message_stream_with_timeout(
+                prompt, timeout=API_TIMEOUT_SECONDS, on_chunk=on_chunk
+            )
+
+            # 解析完整 JSON
+            result = json.loads(response_text.strip())
+            current_trans = result.get("current", "")
+            correction = result.get("correction")
+
+            # 空字串視為無修正
+            if isinstance(correction, str) and correction.strip() == "":
+                correction = None
+
+            print(f"[Translator] Streaming complete - current: {current_trans}, correction: {correction}",
+                  file=sys.stderr, flush=True)
+
+            # Token 追蹤（維持同等管理）
+            if usage_metadata:
+                total = getattr(usage_metadata, 'total_token_count', None)
+                if total is not None:
+                    self._total_tokens = total
+                    print(f"[Translator] Streaming tokens: {self._total_tokens}", file=sys.stderr, flush=True)
+                    if self._total_tokens > self.max_context_tokens:
+                        print(f"[Translator] Token limit reached ({self._total_tokens}), summarizing...",
+                              file=sys.stderr, flush=True)
+                        self._summarize_and_rebuild()
+
+            return (current_trans, correction)
+
+        except Exception as e:
+            print(f"[Translator] Streaming failed: {e}, falling back to blocking...",
+                  file=sys.stderr, flush=True)
+            # 降級為 blocking
+            return self.translate_with_context_correction(
+                current_text, prev_text, prev_translation
+            )

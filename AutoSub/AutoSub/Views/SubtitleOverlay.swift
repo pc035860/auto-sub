@@ -86,6 +86,11 @@ struct SubtitleOverlay: View {
                         proxy.scrollTo("scrollBottom", anchor: .bottom)
                     }
                 }
+                .onChangeCompat(of: appState.subtitleHistory.last?.translatedText) {
+                    // 翻譯更新（含翻譯完成）時也要維持貼底，避免無新 transcript 時停在中間
+                    guard isPinnedToBottom else { return }
+                    proxy.scrollTo("scrollBottom", anchor: .bottom)
+                }
                 .onChangeCompat(of: appState.currentInterim) {
                     // interim 更新時捲到底部（不帶動畫，避免高頻更新造成抖動）
                     if appState.currentInterim != nil, isPinnedToBottom {

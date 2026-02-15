@@ -100,6 +100,9 @@ class PythonBridgeService: ObservableObject {
     /// Phase 2: 翻譯更新回呼（id, translation）- 前句翻譯被修正
     var onTranslationUpdate: ((UUID, String) -> Void)?
 
+    /// Phase 1B: Streaming 翻譯回呼（id, partial_translation）
+    var onTranslationStreaming: ((UUID, String) -> Void)?
+
     /// 錯誤回呼
     var onError: ((String) -> Void)?
 
@@ -114,6 +117,10 @@ class PythonBridgeService: ObservableObject {
 
     /// 輸出緩衝處理器（Thread-safe）
     private let outputHandler = OutputBufferHandler()
+
+    /// Streaming 日誌計數器（用於抽樣輸出）
+    private var streamingLogCounter = 0
+    private var lastStreamingPartialCount: Int? = nil
 
     /// 是否正在運行
     @Published private(set) var isRunning = false
@@ -285,8 +292,7 @@ class PythonBridgeService: ObservableObject {
     /// 注意：這個方法從背景執行緒被呼叫（透過 readabilityHandler）
     /// 使用 nonisolated 標記，因為這是在 Sendable closure 中被呼叫
     private nonisolated func parseAndDispatch(_ jsonLine: String) {
-        print("[PythonBridge] Received JSON line: \(jsonLine)")
-
+        // 先解析 type，再決定是否輸出完整日誌
         guard let jsonData = jsonLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let type = json["type"] as? String else {
@@ -294,7 +300,12 @@ class PythonBridgeService: ObservableObject {
             return
         }
 
-        print("[PythonBridge] Parsed type: \(type)")
+        // streaming 類型只輸出 type，避免日誌泛濫
+        if type == "translation_streaming" {
+            // 日誌已在 case 處理中抽樣輸出
+        } else {
+            print("[PythonBridge] Received: type=\(type)")
+        }
 
         // 回到主線程處理 UI 更新（使用 Task @MainActor）
         Task { @MainActor [weak self] in
@@ -351,6 +362,22 @@ class PythonBridgeService: ObservableObject {
                    let translation = json["translation"] as? String {
                     print("[PythonBridge] Translation update received - id: \(idString), translation: \(translation)")
                     self.onTranslationUpdate?(id, translation)
+                }
+
+            case "translation_streaming":
+                // Phase 1B: 處理 streaming 翻譯更新
+                if let idString = json["id"] as? String,
+                   let id = UUID(uuidString: idString),
+                   let partial = json["partial"] as? String {
+                    // 抽樣輸出日誌（每 5 次或長度變化 > 10 字才輸出）
+                    self.streamingLogCounter += 1
+                    let shouldLog = self.streamingLogCounter % 5 == 0 ||
+                                    abs(partial.count - (self.lastStreamingPartialCount ?? 0)) > 10
+                    if shouldLog {
+                        print("[PythonBridge] Translation streaming - id: \(idString), partial(\(partial.count) chars)")
+                        self.lastStreamingPartialCount = partial.count
+                    }
+                    self.onTranslationStreaming?(id, partial)
                 }
 
             default:
