@@ -165,19 +165,47 @@
 
 ---
 
-### 2.4 Apple SpeechAnalyzer 評估（macOS 26 準備）
+### 2.4 Apple SpeechAnalyzer 評估（macOS 26 準備）🔴 現階段不建議採用
 
 **這不是立即實作項，而是技術評估任務。**
 
 Tech-Researcher 發現 Apple 在 WWDC 2025 推出 SpeechAnalyzer API，處理 34 分鐘影片僅 45 秒，比 Whisper 快 55%，原生 Swift API。
 
-**評估項目**：
-- macOS 26 (Tahoe) 正式發布後確認日語支援
-- 測試即時 STT 的延遲和準確率
-- 評估是否能替代 Deepgram 作為免費 STT 後端
-- 若可行，可實現「混合架構」：Apple SpeechAnalyzer（免費本地 STT）+ Gemini（雲端翻譯）
+**深入評估結果（2026-02-16，5 人團隊研究）**：
 
-**來源**：MacStories 實測、WWDC25 SpeechAnalyzer Session
+| 維度 | SpeechAnalyzer | Deepgram Nova-3 | 勝者 |
+|------|---------------|-----------------|------|
+| 日語 WER | 無數據（推估 15-20%） | **4.8%**（乾淨）/ 11.9%（噪音） | Deepgram |
+| 即時延遲 | ~2.1s（finalized） | **~300ms** | Deepgram |
+| Keyterm 提示詞 | ❌ 不支援 | ✅ 最多 100 個 | Deepgram |
+| 斷句控制 | ❌ 不可自訂 | ✅ endpointing/utterance_end 可調 | Deepgram |
+| 成本 | **免費** | $33.12/月（2h/天） | SpeechAnalyzer |
+| 隱私 | **音訊不離開裝置** | 音訊上傳雲端 | SpeechAnalyzer |
+| 離線 | **✅ 完全支援** | ❌ 需要網路 | SpeechAnalyzer |
+
+**不建議採用的三大理由**：
+1. **延遲**：即時字幕需 <500ms，SpeechAnalyzer 2.1s 不達標（7 倍差距）
+2. **Keyterm**：動漫角色名辨識是核心體驗，SpeechAnalyzer 完全不支援（連前代 SFSpeechRecognizer 有的 Custom Vocabulary 都移除了）
+3. **日語品質**：零 benchmark，英語 WER 14% 已是商業 STT 中下水準
+
+**Devil's Advocate 補充**：
+- 「免費」的隱性成本：遷移工程 2-4 週，雙引擎維護 2-3 倍成本，6-12 個月才回本
+- 隱私提升「半真半假」：音訊是系統播放的影音（非私密語音），翻譯文字仍送 Google 雲端
+- Apple API 歷史 breaking changes 頻繁（iOS 18.0 破壞 SFSpeechRecognizer），目前仍 Beta 3
+
+**建議行動**：
+- **短期**：繼續使用 Deepgram，不投入遷移
+- **中期（6-12 個月）**：監控 SpeechAnalyzer 正式版日語表現
+- **長期（12+ 個月）**：滿足以下 3/5 條件再啟動 POC
+  1. Apple 釋出日語 WER benchmark 且 ≤ 8%
+  2. SpeechAnalyzer 正式版穩定 6 個月以上
+  3. Apple 加入 Custom Vocabulary / Keyterm 等效功能
+  4. macOS 26+ 採用率 > 80%
+  5. 有明確成本壓力需削減 Deepgram 費用
+
+**值得保留的想法**：SpeechDetector (VAD) 可獨立使用輔助現有靜音過濾；STT Provider Protocol 抽象層可為未來留彈性（但不急）
+
+**來源**：MacStories 實測、WWDC25 Session 277、Apple 官方文件、Argmax 效能比較、Deepgram 多語言指南、Anton Gubarenko's iOS 26 Guide、Callstack 實作指南
 
 ---
 
@@ -239,9 +267,9 @@ Phase 3（低優先，有空再做）
 └── 3.2 使用時長計數器
 
 長期觀察
-├── Apple SpeechAnalyzer（macOS 26 發布後評估）
+├── Apple SpeechAnalyzer 🔴（已評估，現階段不採用，待日語品質+keyterm支援改善）
 ├── Gemini Live API（直接音訊→翻譯，等穩定性改善）
-└── 混合 Edge+Cloud 架構（本地 STT + 雲端翻譯）
+└── 混合 Edge+Cloud 架構（本地 STT + 雲端翻譯，待 SpeechAnalyzer 成熟）
 ```
 
 ---
