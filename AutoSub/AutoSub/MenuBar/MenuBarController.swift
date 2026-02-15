@@ -93,7 +93,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private let statusRowView = StatusMenuItemView()
     private let profileSubmenu = NSMenu()
+    private let exportSubmenu = NSMenu()
     private let settingsTarget: MenuActionHandler
+    private let exportTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
 
     private enum ErrorSource {
         case audio
@@ -150,11 +156,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         captureMenuItem.action = #selector(handleToggleCapture(_:))
         menu.addItem(captureMenuItem)
 
-        // 匯出選項
-        exportMenuItem.title = "匯出為 SRT..."
+        // 匯出選項（最近 5 筆 transcription 子選單）
+        exportMenuItem.title = "匯出 transcription（SRT）"
         exportMenuItem.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
-        exportMenuItem.target = self
-        exportMenuItem.action = #selector(handleExport(_:))
+        exportMenuItem.submenu = exportSubmenu
         menu.addItem(exportMenuItem)
 
         menu.addItem(.separator())
@@ -251,7 +256,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
-        appState.$sessionSubtitles
+        appState.$recentTranscriptions
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshExportItem()
@@ -315,11 +320,29 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshExportItem() {
-        let hasContent = !appState.sessionSubtitles.isEmpty
+        let sessions = Array(appState.recentTranscriptions.prefix(5))
+        let hasContent = !sessions.isEmpty
         exportMenuItem.isEnabled = hasContent && !appState.isCapturing
         exportMenuItem.title = hasContent
-            ? "匯出為 SRT..."
-            : "匯出為 SRT...（無內容）"
+            ? "匯出 transcription（最近 5 筆）"
+            : "匯出 transcription（無內容）"
+
+        exportSubmenu.removeAllItems()
+
+        guard hasContent else {
+            let emptyItem = NSMenuItem(title: "無可匯出的 transcription", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            exportSubmenu.addItem(emptyItem)
+            return
+        }
+
+        for session in sessions {
+            let title = exportTimeFormatter.string(from: session.startTime)
+            let item = NSMenuItem(title: title, action: #selector(handleExportRecentSession(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = session.id
+            exportSubmenu.addItem(item)
+        }
     }
 
     // MARK: - Menu Actions
@@ -350,12 +373,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         subtitleWindowController.resetPosition()
     }
 
-    @objc private func handleExport(_ sender: Any?) {
-        guard let startTime = appState.captureStartTime else {
-            // 沒有開始時間，無法計算相對時間戳
+    @objc private func handleExportRecentSession(_ sender: NSMenuItem) {
+        guard let sessionId = sender.representedObject as? UUID,
+              let session = appState.recentTranscriptions.first(where: { $0.id == sessionId }) else {
             return
         }
+        exportSession(session)
+    }
 
+    private func exportSession(_ session: TranscriptionSession) {
         // Menu Bar App 先啟用前景，避免 Save Panel 被其他視窗壓在後方。
         NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
         NSApp.activate(ignoringOtherApps: true)
@@ -397,11 +423,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             guard response == .OK, let url = panel.url else { return }
 
             let mode = ExportMode.allCases[popup.indexOfSelectedItem]
-            let content = ExportService.exportToSRT(
-                self.appState.sessionSubtitles,
-                startTime: startTime,
-                mode: mode
-            )
+            let content = ExportService.exportToSRT(session.subtitles, startTime: session.startTime, mode: mode)
             do {
                 try content.write(to: url, atomically: true, encoding: .utf8)
                 print("[MenuBarController] Exported to: \(url.path)")
@@ -733,6 +755,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         pythonBridge?.onError = nil
         pythonBridge?.onStatusChange = nil
 
+        appState.archiveCurrentSessionIfNeeded()
         appState.isCapturing = false
         // 保留 captureStartTime 給匯出功能使用
         appState.status = .idle

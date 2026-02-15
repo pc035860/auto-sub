@@ -8,6 +8,13 @@
 import SwiftUI
 import Combine
 
+/// 單次 transcription Session（用於最近匯出記錄）
+struct TranscriptionSession: Identifiable, Equatable {
+    let id: UUID
+    let startTime: Date
+    let subtitles: [SubtitleEntry]
+}
+
 /// 應用程式狀態
 enum AppStatus {
     case idle           // 待機
@@ -75,6 +82,11 @@ class AppState: ObservableObject {
     // MARK: - Session 匯出用
     /// Session 完整字幕（用於匯出，不受 subtitleHistoryLimit 限制）
     @Published var sessionSubtitles: [SubtitleEntry] = []
+    /// 最近 5 筆 transcription（可從 menubar 子選單選擇匯出）
+    @Published var recentTranscriptions: [TranscriptionSession] = []
+
+    /// 避免重複歸檔同一個 session
+    private var lastArchivedSessionStartTime: Date?
 
     // MARK: - Interim（正在說的話）
     /// 當前 interim 文字（正在說的話，尚未 final）
@@ -200,6 +212,27 @@ class AppState: ObservableObject {
         currentSubtitle = nil
         currentInterim = nil
         captureStartTime = nil
+    }
+
+    /// 將當前 Session 歸檔到最近 transcription（最多 5 筆）
+    func archiveCurrentSessionIfNeeded() {
+        guard let startTime = captureStartTime, !sessionSubtitles.isEmpty else {
+            return
+        }
+        guard lastArchivedSessionStartTime != startTime else {
+            return
+        }
+
+        let archived = TranscriptionSession(
+            id: UUID(),
+            startTime: startTime,
+            subtitles: sessionSubtitles
+        )
+        recentTranscriptions.insert(archived, at: 0)
+        if recentTranscriptions.count > 5 {
+            recentTranscriptions = Array(recentTranscriptions.prefix(5))
+        }
+        lastArchivedSessionStartTime = startTime
     }
 
     // MARK: - 字幕位置管理
