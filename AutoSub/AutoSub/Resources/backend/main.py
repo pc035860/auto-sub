@@ -30,6 +30,15 @@ def output_json(data: dict):
     print(json.dumps(data, ensure_ascii=False), flush=True)
 
 
+def output_streaming_update(transcript_id: str, partial_translation: str):
+    """輸出 streaming 更新到 stdout"""
+    output_json({
+        "type": "translation_streaming",
+        "id": transcript_id,
+        "partial": partial_translation
+    })
+
+
 def main():
     """主程式"""
     print("[Python] main() started", file=sys.stderr, flush=True)
@@ -80,6 +89,7 @@ def main():
         target_language=target_lang,
         max_context_tokens=max_context_tokens,
         translation_context=translation_context,
+        keyterms=keyterms,
     )
     print("[Python] Translator initialized", file=sys.stderr, flush=True)
 
@@ -113,7 +123,7 @@ def main():
         })
         print(f"[Python] Transcript sent to stdout!", file=sys.stderr, flush=True)
 
-        # 2. 進行翻譯（帶上下文修正）
+        # 2. 進行翻譯（帶上下文修正 + streaming）
         max_retries = 3
         translation_success = False
 
@@ -121,9 +131,14 @@ def main():
             try:
                 print(f"[Python] Translating with context (attempt {attempt + 1})...", file=sys.stderr, flush=True)
 
-                # 使用上下文修正翻譯
-                current_trans, prev_correction = translator.translate_with_context_correction(
-                    text, prev_text, prev_translation
+                # Streaming callback：即時更新 UI
+                def on_streaming(partial: str, correction):
+                    output_streaming_update(transcript_id, partial)
+
+                # 使用 streaming 上下文修正翻譯（失敗時自動降級為 blocking）
+                current_trans, prev_correction = translator.translate_with_context_correction_streaming(
+                    text, prev_text, prev_translation,
+                    on_streaming_update=on_streaming
                 )
 
                 print(f"[Python] Translation result: current={current_trans}, correction={prev_correction}", file=sys.stderr, flush=True)

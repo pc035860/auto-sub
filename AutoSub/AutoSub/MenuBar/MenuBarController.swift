@@ -578,6 +578,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                     state?.updateTranslation(id: id, translation: translation, wasRevised: true)
                 }
             }
+            bridge.onTranslationStreaming = { [weak state] id, partial in
+                // 簡化日誌：只輸出長度資訊
+                print("[MenuBarController] Translation streaming - id: \(id), \(partial.count) chars")
+                Task { @MainActor in
+                    state?.updateStreamingTranslation(id: id, partial: partial)
+                }
+            }
             bridge.onStatusChange = { status in
                 print("[MenuBarController] Python status: \(status)")
             }
@@ -606,6 +613,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             bridge.onSubtitle = nil
             bridge.onInterim = nil
             bridge.onTranslationUpdate = nil
+            bridge.onTranslationStreaming = nil
             bridge.onError = nil
             bridge.onStatusChange = nil
 
@@ -626,6 +634,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         pythonBridge?.onSubtitle = nil
         pythonBridge?.onInterim = nil
         pythonBridge?.onTranslationUpdate = nil
+        pythonBridge?.onTranslationStreaming = nil
         pythonBridge?.onError = nil
         pythonBridge?.onStatusChange = nil
 

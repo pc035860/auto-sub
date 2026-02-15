@@ -145,6 +145,26 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Phase 1B: 更新 streaming 翻譯（即時更新）
+    /// - Note: 只接受比現有更長的 partial，避免網路延遲導致舊資料覆蓋新資料
+    func updateStreamingTranslation(id: UUID, partial: String) {
+        if let index = subtitleHistory.firstIndex(where: { $0.id == id }) {
+            let existingLength = subtitleHistory[index].translatedText?.count ?? 0
+            // 只接受更長的 partial（防止同長度或更短的舊資料覆蓋）
+            guard partial.count > existingLength else {
+                return
+            }
+            var updatedEntry = subtitleHistory[index]
+            updatedEntry.translatedText = partial
+            subtitleHistory[index] = updatedEntry
+
+            // 若是最新的，也更新 currentSubtitle
+            if updatedEntry.id == currentSubtitle?.id {
+                currentSubtitle = updatedEntry
+            }
+        }
+    }
+
     /// 更新 interim 文字（正在說的話）
     func updateInterim(_ text: String) {
         currentInterim = text
