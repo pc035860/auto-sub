@@ -144,6 +144,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - `SubtitleWindowController` 現在透過 `NSWindowDelegate` 同步尺寸與儲存，不再依賴 resize 相關通知事件。
 - `NotificationNames` 已移除字幕 resize 專用通知，`AppState` 也移除 `isResizingSubtitle`，縮放狀態改由視窗生命週期事件管理。
 - `SubtitleOverlay` 已移除自製右下角縮放把手；縮放互動改用 macOS 原生視窗邊框/角落。
+- `LockStateIcon` 已移除，改由 `OpacityQuickMenu` 的顯示/隱藏來指示鎖定狀態。解鎖時右上角顯示透明度 dropdown（5 檔預設 + 自訂值），鎖定時完全隱藏。
 
 ## 音訊格式
 
@@ -198,6 +199,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - 即時原文顯示（interim），翻譯中狀態
 - 字幕視窗支援原生縮放、拖曳、鎖定、持久化（UserDefaults + Configuration）
 - 文字邊框（outline）支援，智能自動捲動
+- 解鎖時顯示 `OpacityQuickMenu`（透明度快速切換 dropdown），鎖定時隱藏；鎖定/解鎖狀態以此 UI 有無來辨識，已移除獨立的 `LockStateIcon`
 
 ### macOS 要求
 - macOS 13.0+（需要 ScreenCaptureKit）

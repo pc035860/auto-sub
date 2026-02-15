@@ -6,12 +6,33 @@
 //  支援歷史字幕顯示（3 筆）、透明度遞減、翻譯中狀態
 //
 
+import AppKit
 import SwiftUI
+
+// MARK: - 多語言字體支援
+
+extension Font {
+    /// 建立支援多語言（中、英、日）的字體（粗體）
+    /// macOS 系統會自動根據文字內容選擇合適的字體：
+    /// - 中文：PingFang SC/TC 或 Hiragino Sans
+    /// - 日文：Hiragino Sans 或 Yu Gothic
+    /// - 英文：SF Pro（系統預設）
+    static func multilingualSystem(size: CGFloat, weight: Font.Weight = .bold) -> Font {
+        // 使用 .system() 搭配明確的 size 和 weight
+        // macOS 會自動處理多語言字體 fallback
+        return .system(size: size, weight: weight, design: .default)
+    }
+}
 
 struct SubtitleOverlay: View {
     @EnvironmentObject var appState: AppState
     @State private var isPinnedToBottom: Bool = true
     @State private var didInitialScroll: Bool = false
+    // 每筆字幕列高度只增不減，避免翻譯中/完成時高度塌縮造成跳動
+    @State private var rowMinHeightById: [UUID: CGFloat] = [:]
+    @State private var previousHistoryIds: [UUID] = []
+    @State private var lastInterimHeight: CGFloat = 0
+    @State private var lastKnownContentWidth: CGFloat = 0
 
     /// 歷史字幕的透明度（最舊 → 最新）
     private let opacityLevels: [Double] = [0.3, 0.6, 1.0]
@@ -19,26 +40,36 @@ struct SubtitleOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                LockStateIcon(isLocked: appState.isSubtitleLocked)
+            if !appState.isSubtitleLocked {
+                HStack(spacing: 4) {
+                    Spacer()
+                    OpacityQuickMenu(appState: appState)
+                }
+                .padding(.trailing, 8)
+                .padding(.top, 8)
             }
-            .padding(.trailing, 8)
-            .padding(.top, 4)
 
             // 字幕內容（帶捲軸）
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: !appState.isSubtitleLocked) {
                     VStack(spacing: 8) {
                         ForEach(Array(appState.subtitleHistory.enumerated()), id: \.element.id) { index, entry in
-                            SubtitleRow(entry: entry, showOriginal: appState.showOriginalText)
+                            SubtitleRow(
+                                entry: entry,
+                                showOriginal: appState.showOriginalText,
+                                minReservedHeight: rowMinHeightById[entry.id]
+                            ) { measuredHeight in
+                                updateRowMinHeight(for: entry.id, measuredHeight: measuredHeight)
+                            }
                                 .opacity(opacityForIndex(index))
                                 .id(entry.id)
                         }
 
                         // Interim（正在說的話）
                         if let interim = appState.currentInterim, !interim.isEmpty {
-                            InterimRow(text: interim)
+                            InterimRow(text: interim) { measuredHeight in
+                                updateInterimHeight(measuredHeight)
+                            }
                                 .id("interim")
                         }
 
@@ -49,6 +80,18 @@ struct SubtitleOverlay: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: SubtitleContentWidthPreferenceKey.self,
+                                value: max(0, geometry.size.width - 40)
+                            )
+                        }
+                    )
+                    .onPreferenceChange(SubtitleContentWidthPreferenceKey.self) { width in
+                        guard width > 0 else { return }
+                        lastKnownContentWidth = width
+                    }
                     .background(
                         ScrollViewScrollObserver { scrollView in
                             let atBottom = appState.isSubtitleLocked
@@ -86,6 +129,9 @@ struct SubtitleOverlay: View {
                         proxy.scrollTo("scrollBottom", anchor: .bottom)
                     }
                 }
+                .onChangeCompat(of: appState.subtitleHistory.map(\.id)) {
+                    syncRowHeightCacheAndSeed(for: appState.subtitleHistory)
+                }
                 .onChangeCompat(of: appState.subtitleHistory.last?.translatedText) {
                     // 翻譯更新（含翻譯完成）時也要維持貼底，避免無新 transcript 時停在中間
                     guard isPinnedToBottom else { return }
@@ -96,6 +142,9 @@ struct SubtitleOverlay: View {
                     if appState.currentInterim != nil, isPinnedToBottom {
                         proxy.scrollTo("scrollBottom", anchor: .bottom)
                     }
+                }
+                .onAppear {
+                    syncRowHeightCacheAndSeed(for: appState.subtitleHistory)
                 }
             }
 
@@ -132,6 +181,100 @@ struct SubtitleOverlay: View {
 
         return 1.0
     }
+
+    private func syncRowHeightCacheAndSeed(for history: [SubtitleEntry]) {
+        let historyIds = history.map(\.id)
+        let historyIdSet = Set(historyIds)
+        rowMinHeightById = rowMinHeightById.filter { historyIdSet.contains($0.key) }
+
+        let previousIdSet = Set(previousHistoryIds)
+        let newEntries = history.filter { !previousIdSet.contains($0.id) }
+
+        var consumedInterimSeed = false
+        for entry in newEntries {
+            let usedInterim = seedReservedHeightIfNeeded(for: entry, allowInterimSeed: !consumedInterimSeed)
+            if usedInterim {
+                consumedInterimSeed = true
+            }
+        }
+
+        if consumedInterimSeed {
+            lastInterimHeight = 0
+        }
+        previousHistoryIds = historyIds
+    }
+
+    @discardableResult
+    private func seedReservedHeightIfNeeded(for entry: SubtitleEntry, allowInterimSeed: Bool) -> Bool {
+        guard !appState.showOriginalText, entry.isTranslating else { return false }
+
+        let width = resolvedContentWidth()
+        let originalHeight = estimateTextHeight(
+            entry.originalText,
+            fontSize: appState.subtitleFontSize * 0.85,
+            width: width
+        )
+        let placeholderHeight = estimateTextHeight(
+            "翻譯中...",
+            fontSize: appState.subtitleFontSize,
+            width: width,
+            isItalic: true
+        )
+        let interimSeed = allowInterimSeed ? lastInterimHeight : 0
+        let seed = max(interimSeed, originalHeight, placeholderHeight)
+
+        guard seed > 0 else { return false }
+        updateRowMinHeight(for: entry.id, measuredHeight: seed)
+        return interimSeed > 0.5
+    }
+
+    private func updateRowMinHeight(for id: UUID, measuredHeight: CGFloat) {
+        let normalizedHeight = ceil(max(0, measuredHeight))
+        guard normalizedHeight > 0 else { return }
+
+        let current = rowMinHeightById[id] ?? 0
+        guard normalizedHeight > current + 0.5 else { return }
+        rowMinHeightById[id] = normalizedHeight
+    }
+
+    private func updateInterimHeight(_ measuredHeight: CGFloat) {
+        let normalizedHeight = ceil(max(0, measuredHeight))
+        guard normalizedHeight > 0 else { return }
+        lastInterimHeight = max(lastInterimHeight, normalizedHeight)
+    }
+
+    private func resolvedContentWidth() -> CGFloat {
+        if lastKnownContentWidth > 0 {
+            return max(80, lastKnownContentWidth)
+        }
+        if appState.subtitleWindowWidth > 0 {
+            return max(80, appState.subtitleWindowWidth - 40)
+        }
+        if let screenWidth = NSScreen.main?.visibleFrame.width {
+            return max(80, (screenWidth * 0.8) - 40)
+        }
+        return 600
+    }
+
+    private func estimateTextHeight(
+        _ text: String,
+        fontSize: CGFloat,
+        width: CGFloat,
+        isItalic: Bool = false
+    ) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+
+        let baseFont = NSFont.systemFont(ofSize: max(1, fontSize), weight: .bold)
+        let font = isItalic
+            ? NSFontManager.shared.convert(baseFont, toHaveTrait: .italicFontMask)
+            : baseFont
+        let bounds = (text as NSString).boundingRect(
+            with: NSSize(width: max(1, width), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        return ceil(bounds.height)
+    }
 }
 
 // MARK: - SubtitleRow
@@ -140,6 +283,8 @@ struct SubtitleOverlay: View {
 struct SubtitleRow: View {
     let entry: SubtitleEntry
     let showOriginal: Bool
+    let minReservedHeight: CGFloat?
+    let onMeasuredHeight: (CGFloat) -> Void
 
     @EnvironmentObject var appState: AppState
 
@@ -149,7 +294,7 @@ struct SubtitleRow: View {
             if showOriginal {
                 SubtitleText(
                     text: entry.originalText,
-                    font: .system(size: appState.subtitleFontSize * 0.85),
+                    font: .multilingualSystem(size: appState.subtitleFontSize * 0.85),
                     textColor: .orange.opacity(0.8),
                     isItalic: false,
                     outlineEnabled: appState.subtitleTextOutlineEnabled
@@ -160,7 +305,7 @@ struct SubtitleRow: View {
             if let translation = entry.translatedText {
                 SubtitleText(
                     text: translation,
-                    font: .system(size: appState.subtitleFontSize),
+                    font: .multilingualSystem(size: appState.subtitleFontSize),
                     textColor: entry.wasRevised ? .mint : .white,
                     isItalic: false,
                     outlineEnabled: appState.subtitleTextOutlineEnabled
@@ -168,14 +313,20 @@ struct SubtitleRow: View {
             } else {
                 SubtitleText(
                     text: "翻譯中...",
-                    font: .system(size: appState.subtitleFontSize),
+                    font: .multilingualSystem(size: appState.subtitleFontSize),
                     textColor: .gray,
                     isItalic: true,
                     outlineEnabled: appState.subtitleTextOutlineEnabled
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: minReservedHeight, alignment: .leading)
+        .background(
+            GeometryReader { geometry in
+                Color.clear.preference(key: SubtitleRowHeightPreferenceKey.self, value: geometry.size.height)
+            }
+        )
+        .onPreferenceChange(SubtitleRowHeightPreferenceKey.self, perform: onMeasuredHeight)
     }
 }
 
@@ -184,18 +335,41 @@ struct SubtitleRow: View {
 /// Interim 文字列（正在說的話）
 struct InterimRow: View {
     let text: String
+    let onMeasuredHeight: (CGFloat) -> Void
 
     @EnvironmentObject var appState: AppState
 
     var body: some View {
         SubtitleText(
             text: text,
-            font: .system(size: appState.subtitleFontSize * 0.85),
+            font: .multilingualSystem(size: appState.subtitleFontSize * 0.85),
             textColor: .cyan.opacity(0.8),
             isItalic: true,
             outlineEnabled: appState.subtitleTextOutlineEnabled
         )
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { geometry in
+                Color.clear.preference(key: SubtitleRowHeightPreferenceKey.self, value: geometry.size.height)
+            }
+        )
+        .onPreferenceChange(SubtitleRowHeightPreferenceKey.self, perform: onMeasuredHeight)
+    }
+}
+
+private struct SubtitleRowHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct SubtitleContentWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -288,21 +462,95 @@ struct SubtitleText: View {
     }
 }
 
-/// 鎖定狀態圖示（純顯示，不可點擊）
-struct LockStateIcon: View {
-    let isLocked: Bool
+/// 透明度快速切換選單（解鎖時顯示）
+struct OpacityQuickMenu: View {
+    @ObservedObject var appState: AppState
+
+    /// 暫存自訂透明度值，切換到預設後仍可切回
+    @State private var cachedCustomValue: Double?
+
+    private static let presets: [(label: String, value: Double)] = [
+        ("全透明", 0.00),
+        ("透明", 0.40),
+        ("淡", 0.60),
+        ("中", 0.80),
+        ("深", 0.95),
+    ]
+
+    /// 目前值是否匹配任何預設檔位（±0.02 容差）
+    private var isCustom: Bool {
+        !Self.presets.contains { abs(appState.subtitleWindowOpacity - $0.value) < 0.02 }
+    }
+
+    /// 用來顯示的自訂值：優先顯示目前值（如果是自訂），否則顯示暫存值
+    private var displayCustomValue: Double? {
+        if isCustom { return appState.subtitleWindowOpacity }
+        return cachedCustomValue
+    }
 
     var body: some View {
-        Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundColor(.white.opacity(0.7))
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.white.opacity(0.1))
-            )
-            .allowsHitTesting(false)
-            .help(isLocked ? "字幕已鎖定（請從 Menu Bar 解鎖）" : "字幕已解鎖（請從 Menu Bar 鎖定）")
+        Menu {
+            ForEach(Self.presets, id: \.value) { preset in
+                Button {
+                    // 切換到預設前，如果目前是自訂值就暫存
+                    if isCustom {
+                        cachedCustomValue = appState.subtitleWindowOpacity
+                    }
+                    appState.subtitleWindowOpacity = preset.value
+                    appState.saveConfiguration()
+                } label: {
+                    HStack {
+                        Text("\(preset.label) \(percentText(preset.value))")
+                        if isSelected(preset.value) {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+
+            // 自訂選項：目前是自訂值，或有暫存的自訂值時顯示
+            if let customValue = displayCustomValue {
+                Divider()
+                Button {
+                    appState.subtitleWindowOpacity = customValue
+                    appState.saveConfiguration()
+                } label: {
+                    HStack {
+                        Text("自訂 \(percentText(customValue))")
+                        if isSelected(customValue) {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.1))
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .onAppear {
+            // 初始化時若為自訂值，暫存起來
+            if isCustom {
+                cachedCustomValue = appState.subtitleWindowOpacity
+            }
+        }
+    }
+
+    private func isSelected(_ value: Double) -> Bool {
+        abs(appState.subtitleWindowOpacity - value) < 0.02
+    }
+
+    private func percentText(_ value: Double) -> String {
+        "\(Int(round(value * 100)))%"
     }
 }
 

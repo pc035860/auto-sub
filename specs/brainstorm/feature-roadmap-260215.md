@@ -10,6 +10,8 @@
 
 本次腦力激盪聚焦 Auto-Sub 的**功能面未來方向**（有別於前兩輪的 UI/UX 改進）。五位 teammates 共提出 14 個功能提案，經 Devil's Advocate 嚴格批判後，精煉為 **2 個立即執行項 + 5 個驗證後執行項 + 2 個低優先項**，否決 5 個提案。
 
+**狀態更新（2026-02-15）**：Tier 1 的 **1.1 Streaming Translation 已完成實作並合併**。
+
 **Devil's Advocate 核心立場**：做 2 件事做到極致，比做 7 件事都半調子好。Auto-Sub 現在最需要的是讓翻譯**更快**出現、讓翻譯**更準確**。其他的，等使用者回饋再說。
 
 ---
@@ -46,7 +48,7 @@
 
 ## Tier 1：立即執行（直接強化核心體驗）
 
-### 1.1 Streaming Translation（翻譯串流輸出）
+### 1.1 Streaming Translation（翻譯串流輸出）✅ 已完成
 
 **問題**：目前整句送翻譯 → 等翻譯完成才顯示，中間 1-3 秒等待明顯影響體驗。
 
@@ -63,6 +65,11 @@
 **相關檔案**：`translator.py:161`（`_send_message_with_timeout`）、`main.py:165-180`（IPC 輸出）
 **難度**：中
 **依據**：Core-Proposer 提案 C5 + Devil's Advocate 有條件通過 + Tech-Researcher Gemini 延遲數據
+
+**完成狀態（2026-02-15）**：
+- 已實作 streaming IPC 訊息 `translation_streaming`（Python backend）
+- 已串接 Swift bridge 回呼 `onTranslationStreaming`
+- 已在 `AppState.updateStreamingTranslation()` 進行 partial 翻譯更新（僅接受更長 partial，避免舊資料覆蓋）
 
 ---
 
@@ -202,9 +209,9 @@ Tech-Researcher 發現 Apple 在 WWDC 2025 推出 SpeechAnalyzer API，處理 34
 ## 建議執行順序
 
 ```
-Phase 1（1-2 週，直接強化核心）
-├── 1.2 術語庫擴展到翻譯端（低難度，立即改善翻譯一致性）
-└── 1.1 Streaming Translation（中難度，需先驗證 Gemini streaming + structured output 相容性）
+Phase 1（進行中，直接強化核心）
+├── ✅ 1.1 Streaming Translation（已完成）
+└── ⏳ 1.2 術語庫擴展到翻譯端（低難度，立即改善翻譯一致性）
 
 Phase 2（驗證數據後決定）
 ├── 2.1 多語言辨識 A/B 測試（改一個設定值）
@@ -249,5 +256,5 @@ Phase 3（低優先，有空再做）
 本輪是**功能面 roadmap**，與前兩輪 **UI/UX 改進**（`uiux-roadmap-260215.md`、`uiux-roadmap-260215-2.md`）互補。建議執行順序：
 
 1. **先完成前輪 UI/UX Phase 1-2**（停止淡出、時長顯示、可讀性、resize、Spinner、Profile 選單）
-2. **再執行本輪 Phase 1**（術語庫擴展、Streaming Translation）
+2. **再執行本輪 Phase 1 剩餘項目**（術語庫擴展；Streaming Translation 已完成）
 3. **收集使用者回饋**後再決定 Phase 2 項目
