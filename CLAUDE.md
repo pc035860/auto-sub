@@ -67,10 +67,11 @@ auto-sub/
 │       ├── AutoSubApp.swift   # 應用入口點，初始化核心服務
 │       ├── MenuBar/           # AppKit MenuBar 控制器
 │       │   └── MenuBarController.swift  # NSStatusItem、AppDelegate、設定視窗
-│       ├── Services/          # 3 核心服務
+│       ├── Services/          # 核心服務
 │       │   ├── AudioCaptureService.swift    # ScreenCaptureKit 音訊擷取
 │       │   ├── PythonBridgeService.swift    # Python 子程序 IPC
-│       │   └── ConfigurationService.swift   # 設定 + Keychain
+│       │   ├── ConfigurationService.swift   # 設定 + Keychain
+│       │   └── ExportService.swift          # SRT 匯出
 │       ├── Models/            # 資料模型
 │       │   ├── AppState.swift       # 應用狀態 (ObservableObject)
 │       │   ├── Configuration.swift  # 設定模型 (含 Profile 遷移)
@@ -140,15 +141,17 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - **鎖定策略固定**：鎖定字幕時 `ignoresMouseEvents = true`（click-through）；解鎖後才允許互動與移動。
 - **縮放持久化時機**：在 `windowDidEndLiveResize` 再儲存設定，避免拖拉過程高頻寫入。
 
+## Swift 開發注意事項
+
+- **struct value type 同步問題**：當 struct 被加入多個陣列時（如 `subtitleHistory` 和 `sessionSubtitles`），更新其中一個陣列中的 entry **不會**自動同步到另一個陣列。必須在 `updateTranslation()` 等更新方法中，同時更新所有相關陣列中對應的 entry。
+
 ## 近期重大變更
 
+- **字幕匯出功能 (2026-02-16)**：新增 SRT 匯出，支援雙語/僅原文/僅翻譯三種模式。Menu Bar → 「匯出為 SRT...」。使用 `sessionSubtitles` 儲存完整 Session（不受 `subtitleHistoryLimit` 限制）。
 - **Streaming Translation (2026-02-15)**：翻譯改用 Gemini Streaming API，邊收到回應邊更新 UI，大幅改善使用者體驗。詳見 [`docs/streaming-translation-guide.md`](docs/streaming-translation-guide.md)。
 - **Streaming 品質提升發現**：Streaming 模式下 Gemini 2.5 Flash Lite 翻譯品質從 ~60 分提升到 ~80 分，接近 Flash 3 水準。
-- 字幕視窗已從「自製 `ResizeHandle` + resize 通知」遷移為 **原生 `NSWindow` 可縮放**（`.titled + .resizable + .fullSizeContentView`）。
-- `SubtitleWindowController` 現在透過 `NSWindowDelegate` 同步尺寸與儲存，不再依賴 resize 相關通知事件。
-- `NotificationNames` 已移除字幕 resize 專用通知，`AppState` 也移除 `isResizingSubtitle`，縮放狀態改由視窗生命週期事件管理。
-- `SubtitleOverlay` 已移除自製右下角縮放把手；縮放互動改用 macOS 原生視窗邊框/角落。
-- `LockStateIcon` 已移除，改由 `OpacityQuickMenu` 的顯示/隱藏來指示鎖定狀態。解鎖時右上角顯示透明度 dropdown（5 檔預設 + 自訂值），鎖定時完全隱藏。
+- 字幕視窗已從「自製 `ResizeHandle` + resize 通知」遷移為 **原生 `NSWindow` 可縮放**。
+- `LockStateIcon` 已移除，改由 `OpacityQuickMenu` 的顯示/隱藏來指示鎖定狀態。
 
 ## 音訊格式
 

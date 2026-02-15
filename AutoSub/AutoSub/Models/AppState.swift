@@ -72,6 +72,10 @@ class AppState: ObservableObject {
     /// 字幕歷史記錄（最多保留 30 筆）
     @Published var subtitleHistory: [SubtitleEntry] = []
 
+    // MARK: - Session 匯出用
+    /// Session 完整字幕（用於匯出，不受 subtitleHistoryLimit 限制）
+    @Published var sessionSubtitles: [SubtitleEntry] = []
+
     // MARK: - Interim（正在說的話）
     /// 當前 interim 文字（正在說的話，尚未 final）
     @Published var currentInterim: String?
@@ -115,6 +119,9 @@ class AppState: ObservableObject {
         let entry = SubtitleEntry(id: id, originalText: text)
         subtitleHistory.append(entry)
 
+        // 同時加入 sessionSubtitles（用於匯出）
+        sessionSubtitles.append(entry)
+
         // 超過最大數量時移除最舊的
         trimSubtitleHistoryIfNeeded()
 
@@ -138,6 +145,11 @@ class AppState: ObservableObject {
             }
             subtitleHistory[index] = updatedEntry
 
+            // 同時更新 sessionSubtitles（用於匯出）
+            if let sessionIndex = sessionSubtitles.firstIndex(where: { $0.id == id }) {
+                sessionSubtitles[sessionIndex] = updatedEntry
+            }
+
             // 若是最新的，也更新 currentSubtitle
             if updatedEntry.id == currentSubtitle?.id {
                 currentSubtitle = updatedEntry
@@ -158,6 +170,11 @@ class AppState: ObservableObject {
             updatedEntry.translatedText = partial
             subtitleHistory[index] = updatedEntry
 
+            // 同時更新 sessionSubtitles（用於匯出）
+            if let sessionIndex = sessionSubtitles.firstIndex(where: { $0.id == id }) {
+                sessionSubtitles[sessionIndex] = updatedEntry
+            }
+
             // 若是最新的，也更新 currentSubtitle
             if updatedEntry.id == currentSubtitle?.id {
                 currentSubtitle = updatedEntry
@@ -174,6 +191,15 @@ class AppState: ObservableObject {
         if subtitleHistory.count > subtitleHistoryLimit {
             subtitleHistory = Array(subtitleHistory.suffix(subtitleHistoryLimit))
         }
+    }
+
+    /// 清空 Session 字幕（開始新 Session 時呼叫）
+    func clearSession() {
+        sessionSubtitles.removeAll()
+        subtitleHistory.removeAll()
+        currentSubtitle = nil
+        currentInterim = nil
+        captureStartTime = nil
     }
 
     // MARK: - 字幕位置管理
