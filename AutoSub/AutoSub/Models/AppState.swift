@@ -28,6 +28,9 @@ enum AppStatus {
 class AppState: ObservableObject {
     private static let initialProfile = Profile()
     private var pendingSaveTask: Task<Void, Never>?
+    private var interimFinalizeTask: Task<Void, Never>?
+    private var lastInterimUpdatedAt: Date?
+    private let interimStaleTimeoutSeconds: TimeInterval = 2.5
     // MARK: - 運行狀態
     @Published var status: AppStatus = .idle
     @Published var isCapturing: Bool = false
@@ -126,7 +129,7 @@ class AppState: ObservableObject {
     /// 新增字幕（原文，翻譯中狀態）
     func addTranscript(id: UUID, text: String) {
         // 清空 interim（已經變成 final 了）
-        currentInterim = nil
+        clearInterim()
 
         let entry = SubtitleEntry(id: id, originalText: text)
         subtitleHistory.append(entry)
@@ -196,7 +199,24 @@ class AppState: ObservableObject {
 
     /// 更新 interim 文字（正在說的話）
     func updateInterim(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            clearInterim()
+            return
+        }
+
         currentInterim = text
+        let updatedAt = Date()
+        lastInterimUpdatedAt = updatedAt
+        scheduleInterimFinalizeIfStale(expectedText: text, expectedUpdatedAt: updatedAt)
+    }
+
+    /// 清空 interim 文字並取消超時任務
+    func clearInterim() {
+        interimFinalizeTask?.cancel()
+        interimFinalizeTask = nil
+        currentInterim = nil
+        lastInterimUpdatedAt = nil
     }
 
     private func trimSubtitleHistoryIfNeeded() {
@@ -207,11 +227,35 @@ class AppState: ObservableObject {
 
     /// 清空 Session 字幕（開始新 Session 時呼叫）
     func clearSession() {
+        clearInterim()
         sessionSubtitles.removeAll()
         subtitleHistory.removeAll()
         currentSubtitle = nil
-        currentInterim = nil
         captureStartTime = nil
+    }
+
+    private func scheduleInterimFinalizeIfStale(expectedText: String, expectedUpdatedAt: Date) {
+        interimFinalizeTask?.cancel()
+
+        let timeoutNanoseconds = UInt64(interimStaleTimeoutSeconds * 1_000_000_000)
+        interimFinalizeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            guard let self else { return }
+            await MainActor.run {
+                guard self.isCapturing else { return }
+                guard self.currentInterim == expectedText else { return }
+                guard self.lastInterimUpdatedAt == expectedUpdatedAt else { return }
+
+                let finalizedText = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !finalizedText.isEmpty else {
+                    self.clearInterim()
+                    return
+                }
+
+                // Backend 會在閒置時把 interim 強制落地並翻譯，這裡只做 UI 保底清除，避免卡住。
+                self.clearInterim()
+            }
+        }
     }
 
     /// 將當前 Session 歸檔到最近 transcription（最多 5 筆）

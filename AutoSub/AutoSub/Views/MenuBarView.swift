@@ -278,7 +278,7 @@ struct MenuBarView: View {
 
             state.status = .error
             state.errorMessage = error.localizedDescription
-            state.currentInterim = nil
+            state.clearInterim()
         }
     }
 
@@ -306,7 +306,7 @@ struct MenuBarView: View {
         appState.isCapturing = false
         appState.status = .idle
         appState.currentSubtitle = nil
-        appState.currentInterim = nil
+        appState.clearInterim()
         appState.subtitleHistory.removeAll()
     }
 }

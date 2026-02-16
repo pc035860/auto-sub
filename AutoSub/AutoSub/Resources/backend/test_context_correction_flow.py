@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import time
 import types
 import unittest
 from pathlib import Path
@@ -28,7 +29,12 @@ def _install_deepgram_stubs() -> None:
         def __init__(self, data):
             self.data = data
 
+    class DummyListenV1ControlMessage:
+        def __init__(self, type):
+            self.type = type
+
     sockets_module.ListenV1MediaMessage = DummyListenV1MediaMessage
+    sockets_module.ListenV1ControlMessage = DummyListenV1ControlMessage
 
     sys.modules["deepgram"] = deepgram_module
     sys.modules["deepgram.core"] = types.ModuleType("deepgram.core")
@@ -149,6 +155,41 @@ class TranscriberContextCorrectionTests(unittest.TestCase):
 
         self.assertEqual(seen[0], ("A", None, None))
         self.assertEqual(seen[1], ("B", "A", None))
+
+    def test_extract_detail_code_identifies_idle_timeout(self):
+        transcriber = self.transcriber_module.Transcriber(api_key="dummy")
+        code = transcriber._extract_detail_code(
+            "received 1011 ... did not receive audio data ... net0001"
+        )
+        self.assertEqual(code, "NET0001_IDLE_TIMEOUT")
+
+    def test_extract_detail_code_returns_none_for_other_errors(self):
+        transcriber = self.transcriber_module.Transcriber(api_key="dummy")
+        code = transcriber._extract_detail_code("some other websocket error")
+        self.assertIsNone(code)
+
+    def test_take_stale_interim_text_returns_text_when_timeout(self):
+        transcriber = self.transcriber_module.Transcriber(api_key="dummy")
+        transcriber._update_interim_state("pending interim")
+        transcriber._last_interim_updated_at = (
+            time.time() - transcriber.INTERIM_STALE_TIMEOUT_SEC - 0.1
+        )
+
+        stale = transcriber._take_stale_interim_text()
+        self.assertEqual(stale, "pending interim")
+
+    def test_emit_incomplete_transcript_appends_suffix(self):
+        transcriber = self.transcriber_module.Transcriber(api_key="dummy")
+        seen = []
+
+        def on_transcript(transcript_id, text, prev_id=None, prev_text=None, prev_translation=None):
+            seen.append(text)
+
+        transcriber.on_transcript = on_transcript
+        transcriber._emit_incomplete_transcript("hello")
+
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0], "hello [暫停]")
 
 
 class TranslatorPromptBranchTests(unittest.TestCase):

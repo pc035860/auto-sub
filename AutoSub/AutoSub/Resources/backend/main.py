@@ -23,6 +23,7 @@ CHANNELS = 2
 BYTES_PER_SAMPLE = 2
 CHUNK_DURATION_MS = 100
 CHUNK_SIZE = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * CHUNK_DURATION_MS // 1000  # 9600 bytes
+INCOMPLETE_SUFFIX = " [暫停]"
 
 
 def output_json(data: dict):
@@ -100,6 +101,16 @@ def main():
             "text": text
         })
 
+    def on_transcriber_error(message: str, detail_code: str | None = None):
+        payload = {
+            "type": "error",
+            "message": message,
+            "code": "DEEPGRAM_ERROR"
+        }
+        if detail_code:
+            payload["detail_code"] = detail_code
+        output_json(payload)
+
     # 儲存 transcriber 參考（用於更新前句翻譯）
     transcriber_ref = [None]
 
@@ -114,6 +125,9 @@ def main():
         print(f"[Python] on_transcript called with id={transcript_id}, text={text}", file=sys.stderr, flush=True)
         if prev_id:
             print(f"[Python] Previous context: prev_id={prev_id}, prev_text={prev_text}, prev_translation={prev_translation}", file=sys.stderr, flush=True)
+
+        is_incomplete = text.endswith(INCOMPLETE_SUFFIX)
+        text_for_translation = text[:-len(INCOMPLETE_SUFFIX)] if is_incomplete else text
 
         # 1. 立即送出原文（翻譯中狀態）
         output_json({
@@ -137,7 +151,7 @@ def main():
 
                 # 使用 streaming 上下文修正翻譯（失敗時自動降級為 blocking）
                 current_trans, prev_correction = translator.translate_with_context_correction_streaming(
-                    text, prev_text, prev_translation,
+                    text_for_translation, prev_text, prev_translation,
                     on_streaming_update=on_streaming
                 )
 
@@ -145,12 +159,13 @@ def main():
 
                 # 確保 current_trans 是有效字串
                 if current_trans and isinstance(current_trans, str) and current_trans.strip():
+                    output_translation = current_trans + INCOMPLETE_SUFFIX if is_incomplete else current_trans
                     # 3. 送出當前翻譯結果
                     output_json({
                         "type": "subtitle",
                         "id": transcript_id,
                         "original": text,
-                        "translation": current_trans
+                        "translation": output_translation
                     })
                     print(f"[Python] Subtitle sent to stdout!", file=sys.stderr, flush=True)
 
@@ -165,7 +180,7 @@ def main():
 
                     # 5. 更新 transcriber 的前句翻譯記錄
                     if transcriber_ref[0]:
-                        transcriber_ref[0].update_previous_translation(current_trans)
+                        transcriber_ref[0].update_previous_translation(output_translation)
 
                     translation_success = True
                     return
@@ -185,7 +200,7 @@ def main():
                 "type": "subtitle",
                 "id": transcript_id,
                 "original": text,
-                "translation": "[翻譯失敗]"
+                "translation": "[翻譯失敗]" + (INCOMPLETE_SUFFIX if is_incomplete else "")
             })
             # 同時送出錯誤通知
             output_json({
@@ -202,6 +217,7 @@ def main():
             language=source_lang,
             on_transcript=on_transcript,
             on_interim=on_interim,
+            on_error=on_transcriber_error,
             endpointing_ms=endpointing_ms,
             utterance_end_ms=utterance_end_ms,
             max_buffer_chars=max_buffer_chars,

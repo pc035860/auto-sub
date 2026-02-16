@@ -12,7 +12,10 @@ from typing import Callable, Optional
 
 from deepgram import DeepgramClient
 from deepgram.core.events import EventType
-from deepgram.extensions.types.sockets import ListenV1MediaMessage
+from deepgram.extensions.types.sockets import (
+    ListenV1ControlMessage,
+    ListenV1MediaMessage,
+)
 
 
 class Transcriber:
@@ -24,12 +27,19 @@ class Transcriber:
             t.send_audio(data)
     """
 
+    KEEPALIVE_INTERVAL_SEC = 3.0
+    AUDIO_IDLE_THRESHOLD_SEC = 2.0
+    WATCHDOG_TICK_SEC = 0.5
+    INTERIM_STALE_TIMEOUT_SEC = 2.5
+    INCOMPLETE_SUFFIX = " [暫停]"
+
     def __init__(
         self,
         api_key: str,
         language: str = "ja",
         on_transcript: Optional[Callable[..., None]] = None,
         on_interim: Optional[Callable[[str], None]] = None,
+        on_error: Optional[Callable[..., None]] = None,
         endpointing_ms: int = 200,
         utterance_end_ms: int = 1000,
         max_buffer_chars: int = 50,
@@ -45,6 +55,9 @@ class Transcriber:
                            - (id: str, text: str) -> None（無前句資訊）
                            - (id: str, text: str, prev_id: str|None, prev_text: str|None, prev_translation: str|None) -> None
             on_interim: 即時結果回呼 (text: str) -> None，顯示正在說的話
+            on_error: 錯誤回呼，支援兩種簽名：
+                      - (message: str) -> None
+                      - (message: str, detail_code: str|None) -> None
             endpointing_ms: 靜音判定時間 (毫秒)，預設 200ms（減半以縮短延遲）
             utterance_end_ms: utterance 超時時間 (毫秒)，預設 1000ms（Deepgram 最小值為 1000）
             max_buffer_chars: 最大累積字數，預設 50（減少 38%）
@@ -54,6 +67,7 @@ class Transcriber:
         self.language = language
         self.on_transcript = on_transcript
         self.on_interim = on_interim
+        self.on_error = on_error
         self.endpointing_ms = endpointing_ms
         self.utterance_end_ms = utterance_end_ms
         self.keyterms = keyterms or []
@@ -62,8 +76,15 @@ class Transcriber:
         self._context_manager = None
         self._connection = None
         self._listener_thread: Optional[threading.Thread] = None
+        self._keepalive_thread: Optional[threading.Thread] = None
+        self._keepalive_stop_event = threading.Event()
+        self._state_lock = threading.Lock()
         self._running = False
         self._start_time: float = 0
+        self._last_audio_sent_at: float = 0
+        self._last_keepalive_sent_at: float = 0
+        self._last_interim_text: Optional[str] = None
+        self._last_interim_updated_at: float = 0
         self._utterance_buffer: list[str] = []  # 累積 buffer
         self._max_buffer_chars: int = max_buffer_chars  # 最大累積字數，超過就強制 flush
 
@@ -129,6 +150,14 @@ class Transcriber:
                 if self._running:
                     print(f"[Listener Error] {e}", file=sys.stderr)
 
+        now = time.time()
+        self._last_audio_sent_at = now
+        self._last_keepalive_sent_at = now
+        self._clear_interim_state()
+        self._keepalive_stop_event.clear()
+        self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
+        self._keepalive_thread.start()
+
         self._listener_thread = threading.Thread(target=listen_loop, daemon=True)
         self._listener_thread.start()
 
@@ -138,6 +167,10 @@ class Transcriber:
     def stop(self) -> None:
         """停止 Deepgram 連線"""
         self._running = False
+        self._keepalive_stop_event.set()
+        if self._keepalive_thread and self._keepalive_thread.is_alive():
+            self._keepalive_thread.join(timeout=0.5)
+        self._keepalive_thread = None
         if self._context_manager:
             try:
                 self._context_manager.__exit__(None, None, None)
@@ -151,8 +184,34 @@ class Transcriber:
         if self._connection and self._running:
             try:
                 self._connection.send_media(ListenV1MediaMessage(audio_data))
+                self._last_audio_sent_at = time.time()
             except Exception:
                 pass  # 連線已關閉時忽略
+
+    def _keepalive_loop(self) -> None:
+        """在無音訊期間送 keepalive，並將長時間卡住的 interim 強制落地。"""
+        while self._running and not self._keepalive_stop_event.wait(self.WATCHDOG_TICK_SEC):
+            stale_interim = self._take_stale_interim_text()
+            if stale_interim:
+                self._emit_incomplete_transcript(stale_interim)
+
+            if not self._connection:
+                continue
+
+            idle_seconds = time.time() - self._last_audio_sent_at
+            if idle_seconds < self.AUDIO_IDLE_THRESHOLD_SEC:
+                continue
+
+            try:
+                now = time.time()
+                if now - self._last_keepalive_sent_at < self.KEEPALIVE_INTERVAL_SEC:
+                    continue
+                self._connection.send_control(ListenV1ControlMessage(type="KeepAlive"))
+                self._last_keepalive_sent_at = now
+            except Exception as e:
+                if self._running:
+                    self._report_error(e)
+                return
 
     def _on_message(self, message) -> None:
         """處理轉錄訊息（SDK v5.x 所有訊息類型都透過此 callback）"""
@@ -172,6 +231,7 @@ class Transcriber:
                         print(f"[Transcriber] transcript='{transcript}', is_final={is_final}, speech_final={speech_final}", file=sys.stderr, flush=True)
 
                         if is_final:
+                            self._clear_interim_state()
                             # 累積到 buffer
                             self._utterance_buffer.append(transcript)
                             buffer_chars = sum(len(t) for t in self._utterance_buffer)
@@ -188,9 +248,10 @@ class Transcriber:
                                 self._flush_buffer()
                         else:
                             # is_final=False：輸出 interim result（buffer + 當前 interim）
+                            buffer_text = "".join(self._utterance_buffer)
+                            combined = buffer_text + transcript
+                            self._update_interim_state(combined)
                             if self.on_interim:
-                                buffer_text = "".join(self._utterance_buffer)
-                                combined = buffer_text + transcript
                                 self.on_interim(combined)
                 else:
                     print(f"[Transcriber] No alternatives in channel", file=sys.stderr, flush=True)
@@ -208,6 +269,7 @@ class Transcriber:
         """輸出累積的 buffer 並清空"""
         if not self._utterance_buffer:
             return
+        self._clear_interim_state()
 
         full_transcript = "".join(self._utterance_buffer)
         self._utterance_buffer.clear()
@@ -236,6 +298,54 @@ class Transcriber:
                     None, None, None
                 )
 
+    def _emit_incomplete_transcript(self, text: str) -> None:
+        """將長時間卡住的 interim 強制落地為未完成句，進入正常翻譯流程。"""
+        if not self.on_transcript:
+            return
+
+        trimmed = text.strip()
+        if not trimmed:
+            return
+
+        full_transcript = trimmed + self.INCOMPLETE_SUFFIX
+        transcript_id = str(uuid.uuid4())
+        previous = self._previous_transcript
+        self._previous_transcript = (transcript_id, full_transcript, None)
+
+        if previous:
+            prev_id, prev_text, prev_translation = previous
+            self.on_transcript(
+                transcript_id, full_transcript,
+                prev_id, prev_text, prev_translation
+            )
+        else:
+            self.on_transcript(
+                transcript_id, full_transcript,
+                None, None, None
+            )
+
+    def _update_interim_state(self, text: str) -> None:
+        with self._state_lock:
+            self._last_interim_text = text
+            self._last_interim_updated_at = time.time()
+
+    def _clear_interim_state(self) -> None:
+        with self._state_lock:
+            self._last_interim_text = None
+            self._last_interim_updated_at = 0
+
+    def _take_stale_interim_text(self) -> Optional[str]:
+        with self._state_lock:
+            if not self._last_interim_text:
+                return None
+            if time.time() - self._last_interim_updated_at < self.INTERIM_STALE_TIMEOUT_SEC:
+                return None
+
+            text = self._last_interim_text
+            self._last_interim_text = None
+            self._last_interim_updated_at = 0
+            return text
+
     def update_previous_translation(self, translation: str) -> None:
         """更新前一句的翻譯結果（由 main.py 呼叫）"""
         if self._previous_transcript:
@@ -246,6 +356,25 @@ class Transcriber:
         """處理錯誤"""
         if self._running:
             print(f"[Deepgram Error] {error}", file=sys.stderr)
+            self._report_error(error)
+
+    @staticmethod
+    def _extract_detail_code(error_text: str) -> Optional[str]:
+        lowered = error_text.lower()
+        if "net0001" in lowered or "did not receive audio data" in lowered:
+            return "NET0001_IDLE_TIMEOUT"
+        return None
+
+    def _report_error(self, error) -> None:
+        if not self.on_error:
+            return
+
+        error_text = str(error)
+        detail_code = self._extract_detail_code(error_text)
+        try:
+            self.on_error(error_text, detail_code)
+        except TypeError:
+            self.on_error(error_text)
 
     def __enter__(self):
         self.start()

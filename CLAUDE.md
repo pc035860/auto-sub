@@ -14,6 +14,7 @@ Auto-Sub 是一款 macOS Menu Bar 應用程式，即時擷取系統音訊進行�
 
 - **Menu Bar 行為以 AppKit 為準**：涉及 Menu、Window、焦點、層級時，優先使用 `NSStatusItem`、`NSMenu`、`NSWindow` 原生能力。
 - **單一責任狀態更新**：同一份 UI 狀態盡量只保留一個權威來源，避免多路徑同時寫入造成競態或抖動。
+- **字幕資料預設保真**：`sessionSubtitles` 與 SRT 匯出預設保留原始事件序列，不做自動去重或語意合併；若要合併必須有明確需求與規格。
 
 ## 開發指令
 
@@ -41,6 +42,9 @@ pip install -r requirements.txt
 
 # 執行 CLI 測試（需要 DEEPGRAM_API_KEY 和 GEMINI_API_KEY 環境變數）
 DEEPGRAM_API_KEY=xxx GEMINI_API_KEY=xxx python test_cli.py
+
+# 執行 backend 單元測試（含 context correction 與 transcriber watchdog）
+python test_context_correction_flow.py
 ```
 
 ### PoC（概念驗證）
@@ -150,6 +154,13 @@ SubtitleOverlay (SwiftUI in NSWindow)
 
 - **本專案為 `LSUIElement`（Agent App）**：開啟設定窗、儲存對話框等系統 UI 前，需先確保 App 被 activate，否則視窗可能不在前景。
 - **避免在 menu tracking 期間直接彈出系統 Panel**：應在下一個 main runloop 週期顯示，降低被其他視窗蓋住或焦點異常的機率。
+- **匯出檔名時間語意**：SRT 預設檔名使用「該 session 開始時間」並與匯出子選單一致，不使用匯出當下時間。
+
+## STT/Interim Gotchas
+
+- **Deepgram idle timeout (`NET0001`) 常見於長時間無音訊**：維持 keepalive 與閒置 watchdog，避免連線被動中斷。
+- **interim 清理必須走 `clearInterim()`**：不要直接寫 `currentInterim = nil`，避免遺留計時任務造成 UI 卡住或狀態不同步。
+- **未完成句標記流程**：backend 會把過期 interim 落地為帶 `[暫停]` 的 transcript；前端只負責顯示與翻譯結果同步，不做隱性改寫。
 
 ## Swift 開發注意事項
 
@@ -158,6 +169,9 @@ SubtitleOverlay (SwiftUI in NSWindow)
 ## 近期重大變更
 
 - **字幕匯出功能 (2026-02-16)**：新增 SRT 匯出，支援雙語/僅原文/僅翻譯三種模式。Menu Bar → 「匯出為 SRT...」。使用 `sessionSubtitles` 儲存完整 Session（不受 `subtitleHistoryLimit` 限制）。
+- **匯出檔名語意對齊 (2026-02-16)**：SRT 預設檔名改為使用 `session.startTime`，與匯出子選單時間一致。
+- **暫停/恢復資料策略調整 (2026-02-16)**：移除 AppState 與 ExportService 的自動去重，恢復為完整保留原始字幕事件序列。
+- **Deepgram 閒置穩定性強化 (2026-02-16)**：transcriber 新增 keepalive + stale interim watchdog；backend error payload 支援 `detail_code`（如 `NET0001_IDLE_TIMEOUT`）。
 - **Streaming Translation (2026-02-15)**：翻譯改用 Gemini Streaming API，邊收到回應邊更新 UI，大幅改善使用者體驗。詳見 [`docs/streaming-translation-guide.md`](docs/streaming-translation-guide.md)。
 - **Streaming 品質提升發現**：Streaming 模式下 Gemini 2.5 Flash Lite 翻譯品質從 ~60 分提升到 ~80 分，接近 Flash 3 水準。
 - 字幕視窗已從「自製 `ResizeHandle` + resize 通知」遷移為 **原生 `NSWindow` 可縮放**。
@@ -182,7 +196,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 {"type": "translation_update", "id": "prev-uuid", "translation": "修正後的前句翻譯"}
 {"type": "interim", "text": "正在說的話（即時）"}
 {"type": "status", "status": "connected"}
-{"type": "error", "message": "...", "code": "..."}
+{"type": "error", "message": "...", "code": "...", "detail_code": "..."}
 ```
 
 ## 技術細節
@@ -193,6 +207,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - 分段邏輯：is_final buffer + speech_final 觸發 + 超過 max_buffer_chars（預設 50）強制 flush + UtteranceEnd 觸發
 - 支援 keyterm 提示詞（透過 Profile 設定）
 - 支援 interim 即時回饋（on_interim callback）
+- 空閒期間自動送 KeepAlive，並在 interim 長時間無更新時落地為 `[暫停]` 未完成句
 - 追蹤前句資訊以支援上下文修正
 
 ### Gemini（translator.py）

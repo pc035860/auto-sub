@@ -394,11 +394,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             panel.title = "匯出字幕"
             panel.message = "選擇儲存位置與匯出內容"
 
-            // 預設檔名
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withYear, .withMonth, .withDay, .withTime]
-            let timestamp = dateFormatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-            panel.nameFieldStringValue = "AutoSub_\(timestamp).srt"
+            // 預設檔名：使用該 session 的開始時間（與匯出子選單顯示時間一致）
+            let menuTimestamp = self.exportTimeFormatter.string(from: session.startTime)
+            let filenameTimestamp = menuTimestamp.replacingOccurrences(of: ":", with: "-")
+            panel.nameFieldStringValue = "AutoSub_\(filenameTimestamp).srt"
 
             panel.allowedContentTypes = [.init(filenameExtension: "srt")!]
             panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -736,7 +735,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
             state.status = .error
             state.errorMessage = error.localizedDescription
-            state.currentInterim = nil
+            state.clearInterim()
         }
     }
 
@@ -760,7 +759,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // 保留 captureStartTime 給匯出功能使用
         appState.status = .idle
         appState.currentSubtitle = nil
-        appState.currentInterim = nil
+        appState.clearInterim()
         // 不再延遲清空字幕歷史（sessionSubtitles 會保留完整內容）
     }
 }
