@@ -784,7 +784,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func stopCapture() async {
         await audioService.stopCapture()
         pythonBridge?.stop()
-        subtitleWindowController.hideWithFadeOut(delay: 3.0, duration: 2.0)
+        subtitleWindowController.hide()
 
         // 清除所有回呼
         if let bridge = pythonBridge {
