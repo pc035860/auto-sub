@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -247,6 +248,18 @@ struct ProfileSettingsView: View {
                         appState.deleteSelectedProfile()
                     }
                     .disabled(appState.isCapturing || appState.profiles.count <= 1)
+
+                    Spacer()
+
+                    Button("匯出") {
+                        exportSelectedProfile()
+                    }
+                    .disabled(appState.isCapturing)
+
+                    Button("匯入") {
+                        importProfileFromFile()
+                    }
+                    .disabled(appState.isCapturing)
                 }
             } header: {
                 Text("Profile")
@@ -374,6 +387,68 @@ struct ProfileSettingsView: View {
         .onDisappear {
             commitDrafts(to: appState.selectedProfileId)
         }
+    }
+
+    // MARK: - 匯出匯入
+
+    private func exportSelectedProfile() {
+        // Menu Bar App 先啟用前景，避免 Save Panel 被其他視窗壓在後方
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+        NSApp.activate(ignoringOtherApps: true)
+
+        // 避免在 SwiftUI 事件處理中直接開 panel，下一個 runloop 再顯示更穩定
+        DispatchQueue.main.async {
+            let panel = NSSavePanel()
+            panel.title = "匯出 Profile"
+            panel.nameFieldStringValue = "\(appState.currentProfile.displayName).json"
+            panel.allowedContentTypes = [UTType.json]
+            panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+
+            do {
+                let data = try appState.exportCurrentProfile()
+                try data.write(to: url)
+            } catch {
+                showErrorAlert(title: "匯出失敗", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func importProfileFromFile() {
+        // Menu Bar App 先啟用前景，避免 Open Panel 被其他視窗壓在後方
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+        NSApp.activate(ignoringOtherApps: true)
+
+        // 避免在 SwiftUI 事件處理中直接開 panel，下一個 runloop 再顯示更穩定
+        DispatchQueue.main.async {
+            let panel = NSOpenPanel()
+            panel.title = "匯入 Profile"
+            panel.allowedContentTypes = [UTType.json]
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+
+            do {
+                let data = try Data(contentsOf: url)
+                if !appState.importProfile(from: data) {
+                    showErrorAlert(title: "匯入失敗", message: "無效的 Profile 格式，或擷取中無法匯入。")
+                }
+                // 注意：不手動呼叫 loadDrafts()，因為 onChange(of: selectedProfileId) 會自動處理
+            } catch {
+                showErrorAlert(title: "匯入失敗", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func showErrorAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "確定")
+        alert.runModal()
     }
 }
 

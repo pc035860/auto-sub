@@ -167,9 +167,15 @@ SubtitleOverlay (SwiftUI in NSWindow)
 ## Swift 開發注意事項
 
 - **struct value type 同步問題**：當 struct 被加入多個陣列時（如 `subtitleHistory` 和 `sessionSubtitles`），更新其中一個陣列中的 entry **不會**自動同步到另一個陣列。必須在 `updateTranslation()` 等更新方法中，同時更新所有相關陣列中對應的 entry。
+- **SwiftUI onChange + loadDrafts 競態**：當 `@Published` 屬性改變觸發 `onChange` 時，`onChange` 內的 `commitDrafts` 會使用當前的 `@State` 值。若在 `onChange` 之前手動呼叫 `loadDrafts()` 更新 `@State`，會導致舊資料被新值覆蓋。**解法**：讓 `onChange` 自己處理 `loadDrafts()`，不要手動呼叫。
 
 ## 近期重大變更
 
+- **Profile 匯出匯入功能 (2026-02-17)**：
+  - 設定視窗 Profile Tab 新增匯出/匯入按鈕
+  - 匯出：單一 Profile → `.json` 檔案（不含 id）
+  - 匯入：自動生成新 UUID、同名衝突加後綴 `(2)`、參數範圍 clamp
+  - 詳見 `specs/brainstorm/profile-import-export.md`
 - **Tier 1 重構完成 (2026-02-16)**：
   - `main.py` `on_transcript` 從 93 行縮減至 46 行，提取 4 個 helper 函數（`translate_with_retry`、`send_subtitle`、`send_translation_update`、`send_translation_error`）
   - `MenuBarController.swift` `startCapture()` 從 123 行縮減至 58 行，提取 4 個 helper 方法（`buildConfiguration`、`setupBridgeCallbacks`、`setupAudioDataCallback`、`clearCallbacks`）
@@ -230,6 +236,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - 每個 Profile 包含：翻譯背景、keyterm 提示詞、來源/目標語言、Deepgram 斷句參數
 - 支援多場景切換（日劇、日漫、教學等）
 - 舊配置自動遷移為預設 Profile
+- **匯出匯入**：設定視窗 → Profile Tab → 匯出/匯入按鈕。匯入時自動生成新 UUID、處理同名衝突、clamp 參數範圍。
 
 ### 全域快捷鍵
 - `⌘ + Shift + S`：開始/停止擷取

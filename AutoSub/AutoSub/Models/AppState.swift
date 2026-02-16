@@ -406,6 +406,63 @@ class AppState: ObservableObject {
         scheduleSaveConfiguration()
     }
 
+    // MARK: - Profile 匯出匯入
+
+    /// 匯出當前 Profile 為 JSON Data（不包含 id）
+    func exportCurrentProfile() throws -> Data {
+        return try currentProfile.encodeForExport()
+    }
+
+    /// 從 JSON Data 匯入 Profile
+    /// - Parameter data: JSON 資料（可不含 id 欄位）
+    /// - Returns: 匯入成功與否
+    @discardableResult
+    func importProfile(from data: Data) -> Bool {
+        guard !isCapturing else { return false }
+
+        // 解碼 Profile（id 若不存在會自動生成）
+        guard var profile = try? JSONDecoder().decode(Profile.self, from: data) else {
+            return false
+        }
+
+        // 生成新 UUID（確保不與現有衝突）
+        profile.id = UUID()
+
+        // 驗證並 clamp Deepgram 參數範圍（避免非法值導致執行期錯誤）
+        profile.deepgramEndpointingMs = max(10, min(1000, profile.deepgramEndpointingMs))
+        profile.deepgramUtteranceEndMs = max(1000, min(5000, profile.deepgramUtteranceEndMs))
+        profile.deepgramMaxBufferChars = max(20, min(120, profile.deepgramMaxBufferChars))
+
+        // 解決名稱衝突
+        let existingNames = profiles.map { $0.name }
+        profile.name = resolveNameConflict(profile.name, existingNames: existingNames)
+
+        // 加入列表並選中
+        profiles.append(profile)
+        selectedProfileId = profile.id
+        saveConfiguration()
+
+        return true
+    }
+
+    /// 解決同名衝突：自動加後綴 (2), (3), ...
+    private func resolveNameConflict(_ name: String, existingNames: [String]) -> String {
+        var newName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if newName.isEmpty { newName = "未命名 Profile" }
+
+        // 如果原名不衝突，直接使用
+        guard existingNames.contains(newName) else {
+            return newName
+        }
+
+        // 衝突時加後綴
+        var counter = 2
+        while existingNames.contains("\(newName) (\(counter))") {
+            counter += 1
+        }
+        return "\(newName) (\(counter))"
+    }
+
     private func scheduleSaveConfiguration() {
         pendingSaveTask?.cancel()
         pendingSaveTask = Task { [weak self] in
