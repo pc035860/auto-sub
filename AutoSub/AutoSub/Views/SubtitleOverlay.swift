@@ -105,6 +105,7 @@ struct SubtitleOverlay: View {
                         }
                     )
                 }
+                .clipped()
                 .scrollDisabled(appState.isSubtitleLocked)
                 .onChangeCompat(of: appState.isSubtitleLocked) {
                     if appState.isSubtitleLocked {
@@ -166,6 +167,7 @@ struct SubtitleOverlay: View {
                 }
             }
         )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     /// 根據索引計算透明度
