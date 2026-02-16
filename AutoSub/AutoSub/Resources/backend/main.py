@@ -40,6 +40,104 @@ def output_streaming_update(transcript_id: str, partial_translation: str):
     })
 
 
+# ============================================================================
+# Translation Helper Functions (Tier 1-1 重構)
+# ============================================================================
+
+MAX_TRANSLATION_RETRIES = 3
+
+
+def translate_with_retry(
+    text: str,
+    prev_text: str | None,
+    prev_translation: str | None,
+    transcript_id: str,
+    translator: Translator,
+    max_retries: int = MAX_TRANSLATION_RETRIES
+) -> tuple[str, str | None] | None:
+    """
+    帶重試機制的 streaming 翻譯。
+
+    Args:
+        text: 當前要翻譯的原文
+        prev_text: 前句原文（上下文修正用）
+        prev_translation: 前句翻譯（上下文修正用）
+        transcript_id: 用於 streaming 更新的 ID
+        translator: 翻譯器實例
+        max_retries: 最大重試次數
+
+    Returns:
+        成功時返回 (current_translation, prev_correction) tuple
+        失敗時返回 None
+    """
+    for attempt in range(max_retries):
+        try:
+            print(f"[Python] Translating with context (attempt {attempt + 1})...", file=sys.stderr, flush=True)
+
+            # Streaming callback：即時更新 UI
+            def on_streaming(partial: str, correction):
+                output_streaming_update(transcript_id, partial)
+
+            current_trans, prev_correction = translator.translate_with_context_correction_streaming(
+                text, prev_text, prev_translation,
+                on_streaming_update=on_streaming
+            )
+
+            print(f"[Python] Translation result: current={current_trans}, correction={prev_correction}", file=sys.stderr, flush=True)
+
+            # 確保 current_trans 是有效字串
+            if current_trans and isinstance(current_trans, str) and current_trans.strip():
+                return (current_trans, prev_correction)
+            else:
+                print(f"[Python] Empty or invalid translation result, retrying...", file=sys.stderr, flush=True)
+                continue
+
+        except Exception as e:
+            print(f"[Python] Translation error: {e}", file=sys.stderr, flush=True)
+
+    return None
+
+
+def send_subtitle(transcript_id: str, original: str, translation: str):
+    """送出翻譯結果（subtitle）"""
+    output_json({
+        "type": "subtitle",
+        "id": transcript_id,
+        "original": original,
+        "translation": translation
+    })
+    print(f"[Python] Subtitle sent to stdout!", file=sys.stderr, flush=True)
+
+
+def send_translation_update(prev_id: str, prev_correction: str):
+    """送出前句修正（translation_update）"""
+    if prev_correction and prev_id:
+        output_json({
+            "type": "translation_update",
+            "id": prev_id,
+            "translation": prev_correction
+        })
+        print(f"[Python] Translation update sent for prev_id={prev_id}!", file=sys.stderr, flush=True)
+
+
+def send_translation_error(transcript_id: str, original: str, is_incomplete: bool):
+    """送出翻譯失敗的降級輸出"""
+    print(f"[Python] Translation failed after {MAX_TRANSLATION_RETRIES} attempts", file=sys.stderr, flush=True)
+    # 送出帶 id 的失敗字幕
+    output_json({
+        "type": "subtitle",
+        "id": transcript_id,
+        "original": original,
+        "translation": "[翻譯失敗]" + (INCOMPLETE_SUFFIX if is_incomplete else "")
+    })
+    # 送出錯誤通知
+    output_json({
+        "type": "error",
+        "message": "Translation failed",
+        "code": "TRANSLATE_ERROR"
+    })
+
+
 def main():
     """主程式"""
     print("[Python] main() started", file=sys.stderr, flush=True)
@@ -114,7 +212,7 @@ def main():
     # 儲存 transcriber 參考（用於更新前句翻譯）
     transcriber_ref = [None]
 
-    # Phase 2: 翻譯回呼（支援上下文修正）
+    # Phase 2: 翻譯回呼（使用 helper 函數簡化）
     def on_transcript(
         transcript_id: str,
         text: str,
@@ -126,10 +224,11 @@ def main():
         if prev_id:
             print(f"[Python] Previous context: prev_id={prev_id}, prev_text={prev_text}, prev_translation={prev_translation}", file=sys.stderr, flush=True)
 
+        # 1. 預處理
         is_incomplete = text.endswith(INCOMPLETE_SUFFIX)
         text_for_translation = text[:-len(INCOMPLETE_SUFFIX)] if is_incomplete else text
 
-        # 1. 立即送出原文（翻譯中狀態）
+        # 2. 立即送出原文（翻譯中狀態）
         output_json({
             "type": "transcript",
             "id": transcript_id,
@@ -137,77 +236,29 @@ def main():
         })
         print(f"[Python] Transcript sent to stdout!", file=sys.stderr, flush=True)
 
-        # 2. 進行翻譯（帶上下文修正 + streaming）
-        max_retries = 3
-        translation_success = False
+        # 3. 執行翻譯（含重試）
+        result = translate_with_retry(
+            text_for_translation, prev_text, prev_translation,
+            transcript_id, translator
+        )
 
-        for attempt in range(max_retries):
-            try:
-                print(f"[Python] Translating with context (attempt {attempt + 1})...", file=sys.stderr, flush=True)
+        # 4. 根據結果送出對應輸出
+        if result:
+            current_trans, prev_correction = result
+            output_translation = current_trans + INCOMPLETE_SUFFIX if is_incomplete else current_trans
 
-                # Streaming callback：即時更新 UI
-                def on_streaming(partial: str, correction):
-                    output_streaming_update(transcript_id, partial)
+            # 送出翻譯結果
+            send_subtitle(transcript_id, text, output_translation)
 
-                # 使用 streaming 上下文修正翻譯（失敗時自動降級為 blocking）
-                current_trans, prev_correction = translator.translate_with_context_correction_streaming(
-                    text_for_translation, prev_text, prev_translation,
-                    on_streaming_update=on_streaming
-                )
+            # 送出前句修正（若有）
+            send_translation_update(prev_id, prev_correction)
 
-                print(f"[Python] Translation result: current={current_trans}, correction={prev_correction}", file=sys.stderr, flush=True)
-
-                # 確保 current_trans 是有效字串
-                if current_trans and isinstance(current_trans, str) and current_trans.strip():
-                    output_translation = current_trans + INCOMPLETE_SUFFIX if is_incomplete else current_trans
-                    # 3. 送出當前翻譯結果
-                    output_json({
-                        "type": "subtitle",
-                        "id": transcript_id,
-                        "original": text,
-                        "translation": output_translation
-                    })
-                    print(f"[Python] Subtitle sent to stdout!", file=sys.stderr, flush=True)
-
-                    # 4. 若有前句修正，送出更新
-                    if prev_correction and prev_id:
-                        output_json({
-                            "type": "translation_update",
-                            "id": prev_id,
-                            "translation": prev_correction
-                        })
-                        print(f"[Python] Translation update sent for prev_id={prev_id}!", file=sys.stderr, flush=True)
-
-                    # 5. 更新 transcriber 的前句翻譯記錄
-                    if transcriber_ref[0]:
-                        transcriber_ref[0].update_previous_translation(output_translation)
-
-                    translation_success = True
-                    return
-                else:
-                    # 翻譯結果為空或無效，視為需要重試
-                    print(f"[Python] Empty or invalid translation result, retrying...", file=sys.stderr, flush=True)
-                    continue
-
-            except Exception as e:
-                print(f"[Python] Translation error: {e}", file=sys.stderr, flush=True)
-
-        # 重試結束仍未成功，送出失敗字幕（帶 id 讓 UI 不會卡在「翻譯中…」）
-        if not translation_success:
-            print(f"[Python] Translation failed after {max_retries} attempts", file=sys.stderr, flush=True)
-            # 送出帶 id 的失敗字幕，讓 UI 可以更新該條目
-            output_json({
-                "type": "subtitle",
-                "id": transcript_id,
-                "original": text,
-                "translation": "[翻譯失敗]" + (INCOMPLETE_SUFFIX if is_incomplete else "")
-            })
-            # 同時送出錯誤通知
-            output_json({
-                "type": "error",
-                "message": "Translation failed",
-                "code": "TRANSLATE_ERROR"
-            })
+            # 更新 transcriber 的前句翻譯記錄
+            if transcriber_ref[0]:
+                transcriber_ref[0].update_previous_translation(output_translation)
+        else:
+            # 翻譯失敗，送出降級輸出
+            send_translation_error(transcript_id, text, is_incomplete)
 
     # 初始化轉錄器並開始處理
     print("[Python] Initializing transcriber...", file=sys.stderr, flush=True)

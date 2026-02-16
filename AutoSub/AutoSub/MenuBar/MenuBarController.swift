@@ -615,6 +615,113 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    // MARK: - Capture Helper Methods (Tier 1-2 重構)
+
+    /// 從 AppState 建構 Configuration 物件
+    private func buildConfiguration(from state: AppState) -> Configuration {
+        let profile = state.currentProfile
+        return Configuration(
+            deepgramApiKey: state.deepgramApiKey,
+            geminiApiKey: state.geminiApiKey,
+            geminiModel: state.geminiModel,
+            geminiMaxContextTokens: state.geminiMaxContextTokens,
+            subtitleFontSize: state.subtitleFontSize,
+            showOriginalText: state.showOriginalText,
+            deepgramEndpointingMs: profile.deepgramEndpointingMs,
+            deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
+            deepgramMaxBufferChars: profile.deepgramMaxBufferChars,
+            profiles: state.profiles,
+            selectedProfileId: state.selectedProfileId,
+            translationContext: profile.translationContext,
+            deepgramKeyterms: profile.keyterms,
+            sourceLanguage: profile.sourceLanguage,
+            targetLanguage: profile.targetLanguage
+        )
+    }
+
+    /// 設定 bridge 和 audioService 的回呼
+    private func setupBridgeCallbacks(bridge: PythonBridgeService, state: AppState) {
+        // Audio 錯誤回呼
+        audioService.onError = { [weak self] error in
+            Task { @MainActor in
+                self?.handleCaptureError(error, source: .audio)
+            }
+        }
+
+        // Bridge 錯誤回呼
+        bridge.onError = { [weak self] message in
+            Task { @MainActor in
+                let error = self?.makePythonBridgeError(message)
+                    ?? NSError(domain: "PythonBridge", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
+                self?.handleCaptureError(error, source: .python)
+            }
+        }
+
+        // 轉錄回呼
+        bridge.onTranscript = { [weak state] id, text in
+            print("[MenuBarController] onTranscript callback received: id=\(id), text=\(text)")
+            Task { @MainActor in
+                state?.addTranscript(id: id, text: text)
+            }
+        }
+
+        // 字幕回呼
+        bridge.onSubtitle = { [weak state] subtitle in
+            print("[MenuBarController] onSubtitle callback received: id=\(subtitle.id), translation=\(subtitle.translatedText ?? "nil")")
+            Task { @MainActor in
+                state?.updateTranslation(id: subtitle.id, translation: subtitle.translatedText ?? "")
+            }
+        }
+
+        // Interim 回呼
+        bridge.onInterim = { [weak state] text in
+            Task { @MainActor in
+                state?.updateInterim(text)
+            }
+        }
+
+        // 翻譯修正回呼
+        bridge.onTranslationUpdate = { [weak state] id, translation in
+            print("[MenuBarController] onTranslationUpdate callback received: id=\(id), translation=\(translation)")
+            Task { @MainActor in
+                state?.updateTranslation(id: id, translation: translation, wasRevised: true)
+            }
+        }
+
+        // Streaming 翻譯回呼
+        bridge.onTranslationStreaming = { [weak state] id, partial in
+            print("[MenuBarController] Translation streaming - id: \(id), \(partial.count) chars")
+            Task { @MainActor in
+                state?.updateStreamingTranslation(id: id, partial: partial)
+            }
+        }
+
+        // 狀態變更回呼
+        bridge.onStatusChange = { status in
+            print("[MenuBarController] Python status: \(status)")
+        }
+    }
+
+    /// 設定音訊資料回呼（必須在 bridge.start() 之後呼叫）
+    private func setupAudioDataCallback(bridge: PythonBridgeService) {
+        audioService.onAudioData = { [weak bridge] data in
+            bridge?.sendAudio(data)
+        }
+    }
+
+    /// 清除所有回呼
+    private func clearCallbacks(bridge: PythonBridgeService) {
+        audioService.onAudioData = nil
+        audioService.onError = nil
+        bridge.onTranscript = nil
+        bridge.onSubtitle = nil
+        bridge.onInterim = nil
+        bridge.onTranslationUpdate = nil
+        bridge.onTranslationStreaming = nil
+        bridge.onError = nil
+        bridge.onStatusChange = nil
+    }
+
     private func startCapture() async {
         print("[MenuBarController] startCapture called")
 
@@ -639,78 +746,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         do {
-            let profile = state.currentProfile
-            let config = Configuration(
-                deepgramApiKey: state.deepgramApiKey,
-                geminiApiKey: state.geminiApiKey,
-                geminiModel: state.geminiModel,
-                geminiMaxContextTokens: state.geminiMaxContextTokens,
-                subtitleFontSize: state.subtitleFontSize,
-                showOriginalText: state.showOriginalText,
-                deepgramEndpointingMs: profile.deepgramEndpointingMs,
-                deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
-                deepgramMaxBufferChars: profile.deepgramMaxBufferChars,
-                profiles: state.profiles,
-                selectedProfileId: state.selectedProfileId,
-                translationContext: profile.translationContext,
-                deepgramKeyterms: profile.keyterms,
-                sourceLanguage: profile.sourceLanguage,
-                targetLanguage: profile.targetLanguage
-            )
+            // 1. 建構配置
+            let config = buildConfiguration(from: state)
 
-            audioService.onError = { [weak self] error in
-                Task { @MainActor in
-                    self?.handleCaptureError(error, source: .audio)
-                }
-            }
-            bridge.onError = { [weak self] message in
-                Task { @MainActor in
-                    let error = self?.makePythonBridgeError(message)
-                        ?? NSError(domain: "PythonBridge", code: -1, userInfo: [NSLocalizedDescriptionKey: message])
-                    self?.handleCaptureError(error, source: .python)
-                }
-            }
+            // 2. 設定回呼
+            setupBridgeCallbacks(bridge: bridge, state: state)
 
-            bridge.onTranscript = { [weak state] id, text in
-                print("[MenuBarController] onTranscript callback received: id=\(id), text=\(text)")
-                Task { @MainActor in
-                    state?.addTranscript(id: id, text: text)
-                }
-            }
-            bridge.onSubtitle = { [weak state] subtitle in
-                print("[MenuBarController] onSubtitle callback received: id=\(subtitle.id), translation=\(subtitle.translatedText ?? "nil")")
-                Task { @MainActor in
-                    state?.updateTranslation(id: subtitle.id, translation: subtitle.translatedText ?? "")
-                }
-            }
-            bridge.onInterim = { [weak state] text in
-                Task { @MainActor in
-                    state?.updateInterim(text)
-                }
-            }
-            bridge.onTranslationUpdate = { [weak state] id, translation in
-                print("[MenuBarController] onTranslationUpdate callback received: id=\(id), translation=\(translation)")
-                Task { @MainActor in
-                    state?.updateTranslation(id: id, translation: translation, wasRevised: true)
-                }
-            }
-            bridge.onTranslationStreaming = { [weak state] id, partial in
-                // 簡化日誌：只輸出長度資訊
-                print("[MenuBarController] Translation streaming - id: \(id), \(partial.count) chars")
-                Task { @MainActor in
-                    state?.updateStreamingTranslation(id: id, partial: partial)
-                }
-            }
-            bridge.onStatusChange = { status in
-                print("[MenuBarController] Python status: \(status)")
-            }
-
+            // 3. 啟動 bridge
             try await bridge.start(config: config)
 
-            audioService.onAudioData = { [weak bridge] data in
-                bridge?.sendAudio(data)
-            }
+            // 4. 設定音訊資料回呼（必須在 bridge.start() 之後）
+            setupAudioDataCallback(bridge: bridge)
 
+            // 5. 啟動音訊擷取
             do {
                 try await audioService.startCapture()
             } catch {
@@ -718,20 +766,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 throw error
             }
 
+            // 6. 更新狀態
             state.isCapturing = true
             state.captureStartTime = Date()
             state.status = .capturing
 
         } catch {
-            audioService.onAudioData = nil
-            audioService.onError = nil
-            bridge.onTranscript = nil
-            bridge.onSubtitle = nil
-            bridge.onInterim = nil
-            bridge.onTranslationUpdate = nil
-            bridge.onTranslationStreaming = nil
-            bridge.onError = nil
-            bridge.onStatusChange = nil
+            // 錯誤處理：清除所有回呼
+            clearCallbacks(bridge: bridge)
 
             state.status = .error
             state.errorMessage = error.localizedDescription
@@ -744,15 +786,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         pythonBridge?.stop()
         subtitleWindowController.hideWithFadeOut(delay: 3.0, duration: 2.0)
 
-        audioService.onAudioData = nil
-        audioService.onError = nil
-        pythonBridge?.onTranscript = nil
-        pythonBridge?.onSubtitle = nil
-        pythonBridge?.onInterim = nil
-        pythonBridge?.onTranslationUpdate = nil
-        pythonBridge?.onTranslationStreaming = nil
-        pythonBridge?.onError = nil
-        pythonBridge?.onStatusChange = nil
+        // 清除所有回呼
+        if let bridge = pythonBridge {
+            clearCallbacks(bridge: bridge)
+        }
 
         appState.archiveCurrentSessionIfNeeded()
         appState.isCapturing = false
