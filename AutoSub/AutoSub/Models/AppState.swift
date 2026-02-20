@@ -44,7 +44,7 @@ class AppState: ObservableObject {
     // MARK: - API 設定
     @Published var deepgramApiKey: String = ""
     @Published var geminiApiKey: String = ""
-    @Published var geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025"
+    @Published var geminiModel: String = "gemini-2.5-flash-lite"
     @Published var geminiMaxContextTokens: Int = 20_000 {
         didSet {
             if geminiMaxContextTokens < 10_000 {

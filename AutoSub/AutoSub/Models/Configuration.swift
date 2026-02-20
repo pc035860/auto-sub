@@ -11,7 +11,7 @@ import Foundation
 struct Configuration: Codable {
     var deepgramApiKey: String
     var geminiApiKey: String
-    var geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025"
+    var geminiModel: String = "gemini-2.5-flash-lite"
     var geminiMaxContextTokens: Int = 20_000
     var subtitleFontSize: CGFloat = 24
     var subtitleWindowWidth: CGFloat = 0
@@ -46,7 +46,7 @@ struct Configuration: Codable {
     init(
         deepgramApiKey: String = "",
         geminiApiKey: String = "",
-        geminiModel: String = "gemini-2.5-flash-lite-preview-09-2025",
+        geminiModel: String = "gemini-2.5-flash-lite",
         geminiMaxContextTokens: Int = 20_000,
         subtitleFontSize: CGFloat = 24,
         subtitleWindowWidth: CGFloat = 0,
@@ -117,7 +117,7 @@ struct Configuration: Codable {
 
         deepgramApiKey = try container.decodeIfPresent(String.self, forKey: .deepgramApiKey) ?? ""
         geminiApiKey = try container.decodeIfPresent(String.self, forKey: .geminiApiKey) ?? ""
-        geminiModel = try container.decodeIfPresent(String.self, forKey: .geminiModel) ?? "gemini-2.5-flash-lite-preview-09-2025"
+        geminiModel = try container.decodeIfPresent(String.self, forKey: .geminiModel) ?? "gemini-2.5-flash-lite"
         geminiMaxContextTokens = try container.decodeIfPresent(Int.self, forKey: .geminiMaxContextTokens) ?? 20_000
         subtitleFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleFontSize) ?? 24
         subtitleWindowWidth = try container.decodeIfPresent(CGFloat.self, forKey: .subtitleWindowWidth) ?? 0

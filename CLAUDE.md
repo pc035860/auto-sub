@@ -189,6 +189,12 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - 字幕視窗已從「自製 `ResizeHandle` + resize 通知」遷移為 **原生 `NSWindow` 可縮放**。
 - `LockStateIcon` 已移除，改由 `OpacityQuickMenu` 的顯示/隱藏來指示鎖定狀態。
 
+## Gemini Model 管理慣例
+
+- **可用模型清單定義在 `SettingsView.swift:geminiModels`**，新增/移除 model 只改這裡即可。
+- **預設值需同步更新三處**：`AppState.swift`、`Configuration.swift`（struct 預設值）、`Configuration.swift`（JSON decode fallback）。
+- **避免在清單中留 deprecated preview model**：deprecated model 若從清單移除，舊 config.json 中存有該 ID 的使用者，Picker 會顯示空白但功能仍正常（以儲存的 model ID 執行）。如需 migration，在 decode 後加 mapping。
+
 ## 音訊格式
 
 - 格式：16-bit signed int, little-endian
@@ -223,7 +229,7 @@ SubtitleOverlay (SwiftUI in NSWindow)
 - 追蹤前句資訊以支援上下文修正
 
 ### Gemini（translator.py）
-- 預設模型：`gemini-2.5-flash-lite-preview-09-2025`，可在設定中切換
+- 預設模型：`gemini-2.5-flash-lite`（Stable），可在設定中切換；可選項：`gemini-2.5-flash`、`gemini-3-flash-preview`
 - **Streaming API**：使用 `send_message_stream()` 即時返回翻譯結果，支援 50ms debounce UI 更新
 - 使用 Structured Output (Pydantic `TranslationResult`) 確保 JSON 回應格式
 - Chat Session 保持上下文，context 超過可配置上限（預設 20K token）自動摘要重建

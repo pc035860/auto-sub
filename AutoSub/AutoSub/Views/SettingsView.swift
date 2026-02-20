@@ -55,9 +55,10 @@ struct SettingsView: View {
 struct APISettingsView: View {
     @EnvironmentObject var appState: AppState
     private let geminiModels: [(id: String, label: String)] = [
-        ("gemini-2.5-flash-lite-preview-09-2025", "2.5 flash-lite"),
-        ("gemini-2.5-flash-preview-09-2025", "2.5 flash"),
-        ("gemini-3-flash-preview", "3 flash")
+        ("gemini-2.5-flash-lite", "2.5 Flash-Lite"),
+        ("gemini-2.5-flash", "2.5 Flash"),
+        ("gemini-3-flash-preview", "3 Flash (Preview)"),
+        // ("gemini-3-pro-preview", "3 Pro (Preview)")
     ]
     private let contextTokenRange: ClosedRange<Int> = 10_000...100_000
 
