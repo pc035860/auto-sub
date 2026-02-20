@@ -188,6 +188,15 @@ struct ProfileSettingsView: View {
         )
     }
 
+    private var interimStaleTimeoutBinding: Binding<Double> {
+        Binding(
+            get: { appState.currentProfile.interimStaleTimeoutSec },
+            set: { newValue in
+                appState.updateCurrentProfile { $0.interimStaleTimeoutSec = newValue }
+            }
+        )
+    }
+
     private var keytermsDraftCount: Int {
         keytermsDraft
             .split(whereSeparator: \.isNewline)
@@ -365,6 +374,13 @@ struct ProfileSettingsView: View {
                     Text("Max Buffer：\(appState.currentProfile.deepgramMaxBufferChars) chars")
                 }
                 Text("累積字數上限，達到就強制送出翻譯。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Stepper(value: interimStaleTimeoutBinding, in: 1.5...10.0, step: 0.5) {
+                    Text("暫停偵測：\(String(format: "%.1f", appState.currentProfile.interimStaleTimeoutSec)) 秒")
+                }
+                Text("即時文字無更新超過此時間即落地為「暫停」句。語速慢或停頓多的語言可調大。")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } header: {

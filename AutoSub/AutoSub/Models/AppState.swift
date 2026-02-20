@@ -343,7 +343,8 @@ class AppState: ObservableObject {
             targetLanguage: base.targetLanguage,
             deepgramEndpointingMs: base.deepgramEndpointingMs,
             deepgramUtteranceEndMs: base.deepgramUtteranceEndMs,
-            deepgramMaxBufferChars: base.deepgramMaxBufferChars
+            deepgramMaxBufferChars: base.deepgramMaxBufferChars,
+            interimStaleTimeoutSec: base.interimStaleTimeoutSec
         )
         profiles.append(newProfile)
         selectedProfileId = newProfile.id
@@ -388,6 +389,7 @@ class AppState: ObservableObject {
             deepgramEndpointingMs: profile.deepgramEndpointingMs,
             deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
             deepgramMaxBufferChars: profile.deepgramMaxBufferChars,
+            interimStaleTimeoutSec: profile.interimStaleTimeoutSec,
             profiles: profiles,
             selectedProfileId: selectedProfileId,
             translationContext: profile.translationContext,
@@ -432,6 +434,7 @@ class AppState: ObservableObject {
         profile.deepgramEndpointingMs = max(10, min(1000, profile.deepgramEndpointingMs))
         profile.deepgramUtteranceEndMs = max(1000, min(5000, profile.deepgramUtteranceEndMs))
         profile.deepgramMaxBufferChars = max(20, min(120, profile.deepgramMaxBufferChars))
+        profile.interimStaleTimeoutSec = max(1.5, min(10.0, profile.interimStaleTimeoutSec))
 
         // 解決名稱衝突
         let existingNames = profiles.map { $0.name }

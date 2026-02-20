@@ -190,6 +190,7 @@ struct MenuBarView: View {
                 deepgramEndpointingMs: profile.deepgramEndpointingMs,
                 deepgramUtteranceEndMs: profile.deepgramUtteranceEndMs,
                 deepgramMaxBufferChars: profile.deepgramMaxBufferChars,
+                interimStaleTimeoutSec: profile.interimStaleTimeoutSec,
                 profiles: state.profiles,
                 selectedProfileId: state.selectedProfileId,
                 translationContext: profile.translationContext,

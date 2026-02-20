@@ -17,6 +17,8 @@ struct Profile: Codable, Identifiable {
     var deepgramEndpointingMs: Int
     var deepgramUtteranceEndMs: Int
     var deepgramMaxBufferChars: Int
+    /// interim 無更新超過此秒數即落地為 [暫停]，預設 4.0 秒
+    var interimStaleTimeoutSec: Double
 
     init(
         id: UUID = UUID(),
@@ -27,7 +29,8 @@ struct Profile: Codable, Identifiable {
         targetLanguage: String = "zh-TW",
         deepgramEndpointingMs: Int = 200,
         deepgramUtteranceEndMs: Int = 1000,
-        deepgramMaxBufferChars: Int = 50
+        deepgramMaxBufferChars: Int = 50,
+        interimStaleTimeoutSec: Double = 4.0
     ) {
         self.id = id
         self.name = name
@@ -38,6 +41,7 @@ struct Profile: Codable, Identifiable {
         self.deepgramEndpointingMs = deepgramEndpointingMs
         self.deepgramUtteranceEndMs = deepgramUtteranceEndMs
         self.deepgramMaxBufferChars = deepgramMaxBufferChars
+        self.interimStaleTimeoutSec = interimStaleTimeoutSec
     }
 
     var displayName: String {
@@ -51,6 +55,7 @@ struct Profile: Codable, Identifiable {
         case id, name, translationContext, keyterms
         case sourceLanguage, targetLanguage
         case deepgramEndpointingMs, deepgramUtteranceEndMs, deepgramMaxBufferChars
+        case interimStaleTimeoutSec
     }
 
     init(from decoder: Decoder) throws {
@@ -65,6 +70,7 @@ struct Profile: Codable, Identifiable {
         deepgramEndpointingMs = try container.decode(Int.self, forKey: .deepgramEndpointingMs)
         deepgramUtteranceEndMs = try container.decode(Int.self, forKey: .deepgramUtteranceEndMs)
         deepgramMaxBufferChars = try container.decode(Int.self, forKey: .deepgramMaxBufferChars)
+        interimStaleTimeoutSec = try container.decodeIfPresent(Double.self, forKey: .interimStaleTimeoutSec) ?? 4.0
     }
 
     // MARK: - 匯出
@@ -79,7 +85,8 @@ struct Profile: Codable, Identifiable {
             "targetLanguage": targetLanguage,
             "deepgramEndpointingMs": deepgramEndpointingMs,
             "deepgramUtteranceEndMs": deepgramUtteranceEndMs,
-            "deepgramMaxBufferChars": deepgramMaxBufferChars
+            "deepgramMaxBufferChars": deepgramMaxBufferChars,
+            "interimStaleTimeoutSec": interimStaleTimeoutSec
         ]
         return try JSONSerialization.data(withJSONObject: exportDict, options: [.sortedKeys, .prettyPrinted])
     }

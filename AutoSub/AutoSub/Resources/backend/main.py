@@ -156,12 +156,13 @@ def main():
     endpointing_ms = int(os.environ.get("DEEPGRAM_ENDPOINTING_MS", "200"))
     utterance_end_ms = int(os.environ.get("DEEPGRAM_UTTERANCE_END_MS", "1000"))
     max_buffer_chars = int(os.environ.get("DEEPGRAM_MAX_BUFFER_CHARS", "50"))
+    interim_stale_timeout_sec = float(os.environ.get("DEEPGRAM_INTERIM_STALE_TIMEOUT_SEC", "4.0"))
 
     # 新增：Gemini Context 設定（有預設值）
     max_context_tokens = int(os.environ.get("GEMINI_MAX_CONTEXT_TOKENS", "20000"))
 
     print(f"[Python] API keys present: deepgram={bool(deepgram_key)}, gemini={bool(gemini_key)}", file=sys.stderr, flush=True)
-    print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}, max_buffer_chars={max_buffer_chars}", file=sys.stderr, flush=True)
+    print(f"[Python] Deepgram config: endpointing_ms={endpointing_ms}, utterance_end_ms={utterance_end_ms}, max_buffer_chars={max_buffer_chars}, interim_stale_timeout_sec={interim_stale_timeout_sec}", file=sys.stderr, flush=True)
     print(f"[Python] Deepgram keyterms: {len(keyterms)} items", file=sys.stderr, flush=True)
     print(
         f"[Python] Gemini config: model={gemini_model}, max_context_tokens={max_context_tokens}",
@@ -272,6 +273,7 @@ def main():
             endpointing_ms=endpointing_ms,
             utterance_end_ms=utterance_end_ms,
             max_buffer_chars=max_buffer_chars,
+            interim_stale_timeout_sec=interim_stale_timeout_sec,
             keyterms=keyterms,
         ) as transcriber:
             # 儲存 transcriber 參考

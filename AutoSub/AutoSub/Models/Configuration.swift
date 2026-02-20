@@ -29,6 +29,8 @@ struct Configuration: Codable {
     var deepgramUtteranceEndMs: Int = 1000
     /// 最大累積字數，預設 50
     var deepgramMaxBufferChars: Int = 50
+    /// interim 無更新超過此秒數即落地為 [暫停]，預設 4.0 秒（由 Profile 帶入，僅用於 runtime）
+    var interimStaleTimeoutSec: Double = 4.0
 
     // MARK: - Profiles
     var profiles: [Profile] = []
@@ -59,6 +61,7 @@ struct Configuration: Codable {
         deepgramEndpointingMs: Int = 200,
         deepgramUtteranceEndMs: Int = 1000,
         deepgramMaxBufferChars: Int = 50,
+        interimStaleTimeoutSec: Double = 4.0,
         profiles: [Profile] = [],
         selectedProfileId: UUID? = nil,
         translationContext: String = "",
@@ -81,6 +84,7 @@ struct Configuration: Codable {
         self.deepgramEndpointingMs = deepgramEndpointingMs
         self.deepgramUtteranceEndMs = deepgramUtteranceEndMs
         self.deepgramMaxBufferChars = deepgramMaxBufferChars
+        self.interimStaleTimeoutSec = interimStaleTimeoutSec
         self.profiles = profiles
         self.selectedProfileId = selectedProfileId
         self.translationContext = translationContext
@@ -168,6 +172,7 @@ struct Configuration: Codable {
             deepgramEndpointingMs = current.deepgramEndpointingMs
             deepgramUtteranceEndMs = current.deepgramUtteranceEndMs
             deepgramMaxBufferChars = current.deepgramMaxBufferChars
+            interimStaleTimeoutSec = current.interimStaleTimeoutSec
         } else {
             sourceLanguage = "ja"
             targetLanguage = "zh-TW"

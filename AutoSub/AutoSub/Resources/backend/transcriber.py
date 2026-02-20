@@ -30,7 +30,6 @@ class Transcriber:
     KEEPALIVE_INTERVAL_SEC = 3.0
     AUDIO_IDLE_THRESHOLD_SEC = 2.0
     WATCHDOG_TICK_SEC = 0.5
-    INTERIM_STALE_TIMEOUT_SEC = 2.5
     INCOMPLETE_SUFFIX = " [暫停]"
 
     def __init__(
@@ -43,6 +42,7 @@ class Transcriber:
         endpointing_ms: int = 200,
         utterance_end_ms: int = 1000,
         max_buffer_chars: int = 50,
+        interim_stale_timeout_sec: float = 4.0,
         keyterms: Optional[list[str]] = None,
     ):
         """
@@ -61,6 +61,7 @@ class Transcriber:
             endpointing_ms: 靜音判定時間 (毫秒)，預設 200ms（減半以縮短延遲）
             utterance_end_ms: utterance 超時時間 (毫秒)，預設 1000ms（Deepgram 最小值為 1000）
             max_buffer_chars: 最大累積字數，預設 50（減少 38%）
+            interim_stale_timeout_sec: interim 無更新超過此秒數即落地為 [暫停]，預設 4.0 秒
             keyterms: Deepgram keyterm 提示詞清單（可為 None）
         """
         self.api_key = api_key
@@ -70,6 +71,7 @@ class Transcriber:
         self.on_error = on_error
         self.endpointing_ms = endpointing_ms
         self.utterance_end_ms = utterance_end_ms
+        self._interim_stale_timeout_sec = interim_stale_timeout_sec
         self.keyterms = keyterms or []
 
         self._client: Optional[DeepgramClient] = None
@@ -338,7 +340,7 @@ class Transcriber:
         with self._state_lock:
             if not self._last_interim_text:
                 return None
-            if time.time() - self._last_interim_updated_at < self.INTERIM_STALE_TIMEOUT_SEC:
+            if time.time() - self._last_interim_updated_at < self._interim_stale_timeout_sec:
                 return None
 
             text = self._last_interim_text

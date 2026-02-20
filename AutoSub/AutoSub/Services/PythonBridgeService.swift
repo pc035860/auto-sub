@@ -198,6 +198,7 @@ class PythonBridgeService: ObservableObject {
         env["DEEPGRAM_ENDPOINTING_MS"] = String(config.deepgramEndpointingMs)
         env["DEEPGRAM_UTTERANCE_END_MS"] = String(config.deepgramUtteranceEndMs)
         env["DEEPGRAM_MAX_BUFFER_CHARS"] = String(config.deepgramMaxBufferChars)
+        env["DEEPGRAM_INTERIM_STALE_TIMEOUT_SEC"] = String(config.interimStaleTimeoutSec)
         process?.environment = env
 
         // 5. 連接管道
