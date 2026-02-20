@@ -26,11 +26,17 @@ enum AppStatus {
 /// 應用程式狀態管理
 @MainActor
 class AppState: ObservableObject {
+    enum InterimClearReason: String {
+        case final
+        case empty
+        case timeout
+        case manual
+    }
+
     private static let initialProfile = Profile()
     private var pendingSaveTask: Task<Void, Never>?
     private var interimFinalizeTask: Task<Void, Never>?
     private var lastInterimUpdatedAt: Date?
-    private let interimStaleTimeoutSeconds: TimeInterval = 2.5
     // MARK: - 運行狀態
     @Published var status: AppStatus = .idle
     @Published var isCapturing: Bool = false
@@ -129,7 +135,7 @@ class AppState: ObservableObject {
     /// 新增字幕（原文，翻譯中狀態）
     func addTranscript(id: UUID, text: String) {
         // 清空 interim（已經變成 final 了）
-        clearInterim()
+        clearInterim(reason: .final)
 
         let entry = SubtitleEntry(id: id, originalText: text)
         subtitleHistory.append(entry)
@@ -201,7 +207,7 @@ class AppState: ObservableObject {
     func updateInterim(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            clearInterim()
+            clearInterim(reason: .empty)
             return
         }
 
@@ -212,11 +218,18 @@ class AppState: ObservableObject {
     }
 
     /// 清空 interim 文字並取消超時任務
-    func clearInterim() {
+    func clearInterim(reason: InterimClearReason = .manual) {
+        let previousInterim = currentInterim
         interimFinalizeTask?.cancel()
         interimFinalizeTask = nil
         currentInterim = nil
         lastInterimUpdatedAt = nil
+
+        let hadInterim = previousInterim != nil
+        let preview = (previousInterim ?? "")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        let truncatedPreview = preview.count > 80 ? String(preview.prefix(80)) + "..." : preview
+        print("[AppState] clearInterim reason=\(reason.rawValue), hadInterim=\(hadInterim), text='\(truncatedPreview)'")
     }
 
     private func trimSubtitleHistoryIfNeeded() {
@@ -237,7 +250,8 @@ class AppState: ObservableObject {
     private func scheduleInterimFinalizeIfStale(expectedText: String, expectedUpdatedAt: Date) {
         interimFinalizeTask?.cancel()
 
-        let timeoutNanoseconds = UInt64(interimStaleTimeoutSeconds * 1_000_000_000)
+        let timeoutSeconds = currentInterimStaleTimeoutSeconds()
+        let timeoutNanoseconds = UInt64(timeoutSeconds * 1_000_000_000)
         interimFinalizeTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: timeoutNanoseconds)
             guard let self else { return }
@@ -248,14 +262,18 @@ class AppState: ObservableObject {
 
                 let finalizedText = expectedText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !finalizedText.isEmpty else {
-                    self.clearInterim()
+                    self.clearInterim(reason: .empty)
                     return
                 }
 
                 // Backend 會在閒置時把 interim 強制落地並翻譯，這裡只做 UI 保底清除，避免卡住。
-                self.clearInterim()
+                self.clearInterim(reason: .timeout)
             }
         }
+    }
+
+    private func currentInterimStaleTimeoutSeconds() -> TimeInterval {
+        max(0.1, currentProfile.interimStaleTimeoutSec)
     }
 
     /// 將當前 Session 歸檔到最近 transcription（最多 5 筆）
