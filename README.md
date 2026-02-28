@@ -85,4 +85,4 @@ open AutoSub/build/Debug/AutoSub.app
 
 ## 授權
 
-Private - All Rights Reserved
+[MIT License](LICENSE)
